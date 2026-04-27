@@ -34,6 +34,7 @@ document.addEventListener('alpine:init', () => {
         leftSidebarOpen: true,
         rightSidebarOpen: false,
         viewMode: 'grid', // 'grid' | 'list'
+        artistTab: 'songs', // 'songs' | 'albums'
 
         // Search state
         searchQuery: '',
@@ -165,6 +166,24 @@ document.addEventListener('alpine:init', () => {
         get canGoBack() { return this.navHistory.length > 0; },
         get canGoForward() { return this.navFuture.length > 0; },
 
+        get artistAlbumList() {
+            if (!this.selectedArtist) return [];
+            const map = {};
+            this.songs.forEach(s => {
+                if (!s.album) return;
+                const artistName = s.artist ?? 'Unknown Artist';
+                if (artistName !== this.selectedArtist) return;
+                if (!map[s.album]) {
+                    map[s.album] = { name: s.album, artist: s.artist, artwork_url: null, count: 0 };
+                }
+                map[s.album].count++;
+                if (!map[s.album].artwork_url && s.artwork_url) {
+                    map[s.album].artwork_url = s.artwork_url;
+                }
+            });
+            return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+        },
+
         get artistList() {
             const map = {};
             this.songs.forEach(s => {
@@ -243,6 +262,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         viewArtist(artistName) {
+            this.artistTab = 'songs';
             this.goTo('artist', { artist: artistName });
         },
 
@@ -720,6 +740,12 @@ document.addEventListener('alpine:init', () => {
             const [first, ...rest] = songIds;
             this.queue = rest;
             this.loadSong(first);
+            this._syncToDbDebounced(500);
+        },
+
+        addAllToQueue(songIds) {
+            if (!songIds || !songIds.length) return;
+            songIds.forEach(id => this.queue.push(id));
             this._syncToDbDebounced(500);
         },
 

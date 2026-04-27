@@ -131,9 +131,12 @@
                 <div class="sp-header-gradient sp-header-green flex-shrink-0 px-4 pb-3 pt-4">
                     <p class="text-uppercase fw-semibold small mb-1" style="color:rgba(255,255,255,.7);letter-spacing:.06em;">Good Evening</p>
                     <h1 class="fw-bold mb-3" style="font-size:2rem;">Your Music</h1>
-                    <div class="d-flex align-items-center gap-3" x-show="songs.length">
+                    <div class="d-flex align-items-center gap-3 flex-wrap" x-show="songs.length">
                         <button class="sp-play-all-btn" @click="playAll(songs.map(s => s.id))" title="Play all songs">
                             <i class="bi bi-play-fill"></i>
+                        </button>
+                        <button class="btn btn-outline-light btn-sm rounded-pill px-3" @click="addAllToQueue(songs.map(s => s.id))" title="Add all to queue">
+                            <i class="bi bi-collection-play me-1"></i>Add all to queue
                         </button>
                         <span class="text-white-50 small fw-semibold" x-text="songs.length + ' songs'"></span>
                     </div>
@@ -149,9 +152,12 @@
                         Liked Songs
                     </h1>
                     <p class="mb-3 small" style="color:rgba(255,255,255,.7);" x-text="favourites.length + ' songs'"></p>
-                    <div class="d-flex align-items-center gap-3" x-show="favourites.length">
+                    <div class="d-flex align-items-center gap-3 flex-wrap" x-show="favourites.length">
                         <button class="sp-play-all-btn" @click="playAll(filteredSongs.map(s => s.id))" title="Play liked songs">
                             <i class="bi bi-play-fill"></i>
+                        </button>
+                        <button class="btn btn-outline-light btn-sm rounded-pill px-3" @click="addAllToQueue(filteredSongs.map(s => s.id))" title="Add all to queue">
+                            <i class="bi bi-collection-play me-1"></i>Add all to queue
                         </button>
                         <span class="text-white-50 small fw-semibold">Play all liked songs</span>
                     </div>
@@ -167,6 +173,9 @@
                     <div class="d-flex align-items-center gap-3 flex-wrap">
                         <button class="sp-play-all-btn" @click="playAll(filteredSongs.map(s => s.id))" title="Play playlist" x-show="filteredSongs.length">
                             <i class="bi bi-play-fill"></i>
+                        </button>
+                        <button class="btn btn-outline-light btn-sm rounded-pill px-3" @click="addAllToQueue(filteredSongs.map(s => s.id))" title="Add all to queue" x-show="filteredSongs.length">
+                            <i class="bi bi-collection-play me-1"></i>Add all to queue
                         </button>
                         <span class="small" style="color:rgba(255,255,255,.5);" x-text="selectedPlaylist.songs.length + ' songs'"></span>
                         <button class="sp-pill-btn" @click="openEditPlaylist(selectedPlaylist)">
@@ -234,9 +243,12 @@
                                 </span>
                             </p>
                             <p class="mb-3 small" style="color:rgba(255,255,255,.5);" x-text="filteredSongs.length + ' songs'"></p>
-                            <div class="d-flex align-items-center gap-3" x-show="filteredSongs.length">
+                            <div class="d-flex align-items-center gap-3 flex-wrap" x-show="filteredSongs.length">
                                 <button class="sp-play-all-btn" @click="playAll(filteredSongs.map(s => s.id))" title="Play album">
                                     <i class="bi bi-play-fill"></i>
+                                </button>
+                                <button class="btn btn-outline-light btn-sm rounded-pill px-3" @click="addAllToQueue(filteredSongs.map(s => s.id))" title="Add all to queue">
+                                    <i class="bi bi-collection-play me-1"></i>Add all to queue
                                 </button>
                                 <span class="text-white-50 small fw-semibold">Play album</span>
                             </div>
@@ -268,14 +280,47 @@
                             <p class="text-uppercase fw-semibold small mb-1" style="color:rgba(255,255,255,.7);letter-spacing:.06em;">Artist</p>
                             <h1 class="fw-bold mb-1" style="font-size:1.8rem;line-height:1.1;" x-text="selectedArtist"></h1>
                             <p class="mb-3 small" style="color:rgba(255,255,255,.5);" x-text="filteredSongs.length + ' songs'"></p>
-                            <div class="d-flex align-items-center gap-3" x-show="filteredSongs.length">
+                            <div class="d-flex align-items-center gap-3 flex-wrap" x-show="filteredSongs.length">
                                 <button class="sp-play-all-btn" @click="playAll(filteredSongs.map(s => s.id))" title="Play all songs by this artist">
                                     <i class="bi bi-play-fill"></i>
+                                </button>
+                                <button class="btn btn-outline-light btn-sm rounded-pill px-3" @click="addAllToQueue(filteredSongs.map(s => s.id))" title="Add all to queue">
+                                    <i class="bi bi-collection-play me-1"></i>Add all to queue
                                 </button>
                                 <span class="text-white-50 small fw-semibold">Play all</span>
                             </div>
                         </div>
                     </div>
+                </div>
+            </template>
+
+            {{-- ─── Artist Tab Nav ─── --}}
+            <template x-if="currentView === 'artist'">
+                <div class="px-4 pt-3 pb-0 flex-shrink-0">
+                    <ul class="nav sp-artist-tabs">
+                        <li class="nav-item">
+                            <button
+                                class="sp-artist-tab-btn"
+                                :class="artistTab === 'songs' ? 'sp-artist-tab-active' : ''"
+                                @click="artistTab = 'songs'"
+                            >
+                                <i class="bi bi-music-note-list me-1"></i>
+                                Songs
+                                <span class="sp-artist-tab-badge" x-text="filteredSongs.length"></span>
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button
+                                class="sp-artist-tab-btn"
+                                :class="artistTab === 'albums' ? 'sp-artist-tab-active' : ''"
+                                @click="artistTab = 'albums'"
+                            >
+                                <i class="bi bi-disc me-1"></i>
+                                Albums
+                                <span class="sp-artist-tab-badge" x-text="artistAlbumList.length"></span>
+                            </button>
+                        </li>
+                    </ul>
                 </div>
             </template>
 
@@ -300,6 +345,9 @@
                     <div class="d-flex align-items-center gap-3 flex-wrap">
                         <button class="sp-play-all-btn" @click="playAll(filteredSongs.map(s => s.id))" title="Play all history" x-show="filteredSongs.length">
                             <i class="bi bi-play-fill"></i>
+                        </button>
+                        <button class="btn btn-outline-light btn-sm rounded-pill px-3" @click="addAllToQueue(filteredSongs.map(s => s.id))" title="Add all to queue" x-show="filteredSongs.length">
+                            <i class="bi bi-collection-play me-1"></i>Add all to queue
                         </button>
                         <span class="text-white-50 small fw-semibold" x-show="filteredSongs.length">Play all</span>
                         <button class="sp-pill-btn sp-pill-btn-danger" @click="clearHistory()" x-show="history.length">
@@ -380,7 +428,7 @@
                 </div>
 
                 {{-- Result count + play button --}}
-                <div class="mt-2 d-flex align-items-center gap-3"
+                <div class="mt-2 d-flex align-items-center gap-3 flex-wrap"
                      x-show="searchQuery || filterYear || filterGenre">
                     <span class="text-secondary" style="font-size:.8rem;"
                           x-text="filteredSongs.length + ' result' + (filteredSongs.length !== 1 ? 's' : '') + ' found'">
@@ -390,6 +438,12 @@
                             @click="playAll(filteredSongs.map(s => s.id))"
                             title="Play all results">
                         <i class="bi bi-play-fill"></i>
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm rounded-pill px-3"
+                            x-show="filteredSongs.length"
+                            @click="addAllToQueue(filteredSongs.map(s => s.id))"
+                            title="Add all results to queue">
+                        <i class="bi bi-collection-play me-1"></i>Add all to queue
                     </button>
                     <span class="text-white-50 small" x-show="filteredSongs.length">Play all results</span>
                 </div>
@@ -458,8 +512,39 @@
                 </div>
             </div>
 
+            {{-- ─── Artist Albums Grid ─── --}}
+            <div x-show="currentView === 'artist' && artistTab === 'albums'" class="px-4 pb-4 pt-3 flex-grow-1">
+                <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-xl-5 g-3">
+                    <template x-for="album in artistAlbumList" :key="album.name">
+                        <div class="col">
+                            <div class="sp-song-card rounded-3 h-100" @click="viewAlbum(album.name)" style="cursor:pointer;">
+                                <div class="sp-song-card-art rounded-2">
+                                    <template x-if="album.artwork_url">
+                                        <img :src="album.artwork_url" class="w-100 h-100 object-fit-cover rounded-2" alt="">
+                                    </template>
+                                    <template x-if="!album.artwork_url">
+                                        <div class="sp-song-card-art-placeholder">
+                                            <i class="bi bi-disc text-secondary fs-4"></i>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="pt-3 px-1 pb-1">
+                                    <div class="text-truncate small fw-semibold" x-text="album.name"></div>
+                                    <div class="mt-1" style="font-size:.75rem;color:var(--sp-muted);" x-text="album.count + ' songs'"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <div x-show="artistAlbumList.length === 0" class="text-center py-5">
+                    <i class="bi bi-disc text-secondary" style="font-size:3rem;"></i>
+                    <p class="text-secondary mt-3 mb-1">No albums found.</p>
+                    <p class="text-secondary small">Songs from this artist with album metadata will appear here.</p>
+                </div>
+            </div>
+
             {{-- ─── Song grid / list (all, favourites, playlist, album, artist, search views) ─── --}}
-            <div x-show="!['albums','artists'].includes(currentView)" class="px-4 pb-2 pt-1 flex-shrink-0">
+            <div x-show="!['albums','artists'].includes(currentView) && !(currentView === 'artist' && artistTab === 'albums')" class="px-4 pb-2 pt-1 flex-shrink-0">
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <h2 class="fw-bold mb-0 fs-5">
                         <span x-show="currentView !== 'search'">Songs</span>
@@ -1775,5 +1860,51 @@
         -webkit-appearance: none;
         -moz-appearance: none;
         appearance: none;
+    }
+
+    /* ── Artist tabs ── */
+    .sp-artist-tabs {
+        display: flex;
+        gap: 4px;
+        border-bottom: 1px solid rgba(255,255,255,.1);
+        margin-bottom: 0;
+        padding-bottom: 0;
+        list-style: none;
+        padding-left: 0;
+    }
+    .sp-artist-tab-btn {
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--sp-muted);
+        font-size: .85rem;
+        font-weight: 600;
+        padding: 8px 16px 10px;
+        cursor: pointer;
+        transition: color .15s, border-color .15s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: -1px;
+        letter-spacing: .02em;
+    }
+    .sp-artist-tab-btn:hover { color: var(--sp-text); }
+    .sp-artist-tab-active {
+        color: var(--sp-text) !important;
+        border-bottom-color: var(--sp-green) !important;
+    }
+    .sp-artist-tab-badge {
+        background: rgba(255,255,255,.12);
+        border-radius: 20px;
+        font-size: .7rem;
+        font-weight: 700;
+        padding: 1px 7px;
+        color: var(--sp-muted);
+        min-width: 22px;
+        text-align: center;
+    }
+    .sp-artist-tab-active .sp-artist-tab-badge {
+        background: rgba(29,185,84,.2);
+        color: var(--sp-green);
     }
 </style>
