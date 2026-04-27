@@ -394,6 +394,26 @@ document.addEventListener('alpine:init', () => {
                 this.loadSong(this.queue.shift());
                 return;
             }
+            if (this.loop === 'all') {
+                const songs = this.filteredSongs.length ? this.filteredSongs : this.songs;
+                if (songs.length) {
+                    const ids = this.shuffle
+                        ? (() => {
+                            const shuffled = songs.map(s => s.id).filter(id => id !== this.currentSongId);
+                            for (let i = shuffled.length - 1; i > 0; i--) {
+                                const j = Math.floor(Math.random() * (i + 1));
+                                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                            }
+                            return shuffled;
+                        })()
+                        : songs.map(s => s.id);
+                    const [first, ...rest] = ids;
+                    this.queue = rest;
+                    this.loadSong(first);
+                    this._syncToDbDebounced(500);
+                    return;
+                }
+            }
             // Queue is empty — stop playback and clear now playing
             this.audio.pause();
             this.playing = false;
