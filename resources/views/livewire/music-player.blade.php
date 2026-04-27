@@ -764,6 +764,15 @@
                 </div>
 
                 {{-- Now Playing in queue --}}
+                <div x-show="!currentSong" class="px-3 py-4 flex-shrink-0 border-bottom border-secondary border-opacity-10 text-center">
+                    <p class="text-uppercase fw-semibold mb-2" style="font-size:.68rem;letter-spacing:.05em;color:var(--sp-muted);">Now Playing</p>
+                    <div class="d-flex flex-column align-items-center gap-2 py-2">
+                        <div class="rounded-2 d-flex align-items-center justify-content-center" style="width:52px;height:52px;background:var(--sp-hover);">
+                            <i class="bi bi-music-note text-secondary" style="font-size:1.4rem;"></i>
+                        </div>
+                        <p class="text-secondary mb-0" style="font-size:.78rem;">Nothing is playing</p>
+                    </div>
+                </div>
                 <div x-show="currentSong" class="px-3 py-2 flex-shrink-0 border-bottom border-secondary border-opacity-10">
                     <p class="text-uppercase fw-semibold mb-2" style="font-size:.68rem;letter-spacing:.05em;color:var(--sp-muted);">Now Playing</p>
                     <div
@@ -897,8 +906,8 @@
                 </template>
             </div>
 
-            <div class="overflow-hidden" style="min-width:0;">
-                <div class="text-truncate fw-semibold" style="font-size:.85rem;" x-text="currentSong ? currentSong.title : 'Not playing'"></div>
+            <div class="overflow-hidden" style="min-width:0;" x-show="currentSong">
+                <div class="text-truncate fw-semibold" style="font-size:.85rem;" x-text="currentSong ? currentSong.title : ''"></div>
                 <div class="text-truncate"
                      style="font-size:.75rem;color:var(--sp-muted);"
                      :style="currentSong?.artist ? 'cursor:pointer;' : ''"
@@ -919,7 +928,8 @@
         </div>
 
         {{-- Center: Controls --}}
-        <div class="d-flex flex-column align-items-center gap-2 sp-player-center">
+        <div class="d-flex flex-column align-items-center gap-2 sp-player-center"
+             :style="!currentSong ? 'opacity:.35;pointer-events:none;' : ''">
             <div class="d-flex align-items-center gap-3">
                 <button class="sp-icon-btn" :class="shuffle ? 'sp-icon-btn-active' : ''" @click="toggleShuffle()" title="Shuffle">
                     <i class="bi bi-shuffle"></i>
@@ -944,16 +954,16 @@
             </div>
 
             <div class="d-flex align-items-center gap-2 w-100">
-                <span class="text-secondary" style="font-size:.7rem;width:32px;text-align:right;" x-text="formatTime(currentTime)">0:00</span>
+                <span class="text-secondary" style="font-size:.7rem;width:32px;text-align:right;" x-text="currentSong ? formatTime(currentTime) : '0:00'">0:00</span>
                 <input
                     type="range"
                     class="flex-grow-1 progress-bar-input"
                     min="0" max="100" step="0.1"
-                    :value="progress"
-                    :style="'--progress:' + progress + '%'"
+                    :value="currentSong ? progress : 0"
+                    :style="'--progress:' + (currentSong ? progress : 0) + '%'"
                     @input="seek($event.target.value)"
                 >
-                <span class="text-secondary" style="font-size:.7rem;width:32px;" x-text="formatTime(duration)">0:00</span>
+                <span class="text-secondary" style="font-size:.7rem;width:32px;" x-text="currentSong ? formatTime(duration) : '0:00'">0:00</span>
             </div>
         </div>
 

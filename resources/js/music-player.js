@@ -317,8 +317,10 @@ document.addEventListener('alpine:init', () => {
 
             if (this.songs.length) {
                 const songId = src.current_song_id ?? src.currentSongId;
-                const exists = songId && this.songs.find(s => s.id === songId);
-                this.loadSong(exists ? songId : this.songs[0].id, false);
+                const song = songId ? this.songs.find(s => s.id === songId) : null;
+                if (song) {
+                    this.loadSong(song.id, false);
+                }
             }
         },
 
@@ -372,25 +374,12 @@ document.addEventListener('alpine:init', () => {
                 this.loadSong(this.queue.shift());
                 return;
             }
-
-            const songs = this.filteredSongs.length ? this.filteredSongs : this.songs;
-            if (!songs.length) return;
-
-            let nextId;
-            if (this.shuffle) {
-                if (!this.shuffleQueue.length) this.buildShuffleQueue(songs);
-                nextId = this.shuffleQueue.pop();
-            } else {
-                const idx = songs.findIndex(s => s.id === this.currentSongId);
-                const nextIdx = idx + 1;
-                if (nextIdx >= songs.length && this.loop === 'none') {
-                    this.audio.pause();
-                    this.playing = false;
-                    return;
-                }
-                nextId = songs[nextIdx % songs.length].id;
-            }
-            this.loadSong(nextId);
+            // Queue is empty — stop playback and clear now playing
+            this.audio.pause();
+            this.playing = false;
+            this.currentSongId = null;
+            this._saveState();
+            this._syncToDb();
         },
 
         prev() {
