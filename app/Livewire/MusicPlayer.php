@@ -8,6 +8,7 @@ use App\Models\Favourite;
 use App\Models\Playlist;
 use App\Models\PlaylistSong;
 use App\Models\PlayerSession;
+use App\Models\PlayHistory;
 use App\Models\QueueItem;
 
 class MusicPlayer extends Component
@@ -16,19 +17,21 @@ class MusicPlayer extends Component
     public array $favourites = [];
     public array $playlists = [];
     public array $session = [];
+    public array $history = [];
 
     public function mount(): void
     {
         $user = auth()->user();
 
-        $this->songs = Song::all()
+        $this->songs = Song::with(['artist', 'album', 'genre'])
+            ->get()
             ->map(fn($song) => [
                 'id'          => $song->id,
                 'filename'    => $song->filename,
                 'title'       => $song->title,
-                'artist'      => $song->artist,
-                'album'       => $song->album,
-                'genre'       => $song->genre,
+                'artist'      => $song->artist?->name,
+                'album'       => $song->album?->name,
+                'genre'       => $song->genre?->name,
                 'year'        => $song->year,
                 'track'       => $song->track,
                 'url'         => route('audio.stream', ['filename' => $song->filename]),
@@ -55,6 +58,13 @@ class MusicPlayer extends Component
             ])
             ->toArray();
 
+        $this->history = PlayHistory::where('user_id', $user->id)
+            ->orderByDesc('played_at')
+            ->pluck('song_id')
+            ->unique()
+            ->values()
+            ->toArray();
+
         $dbSession = PlayerSession::where('user_id', $user->id)->first();
         $queue     = QueueItem::where('user_id', $user->id)
             ->orderBy('position')
@@ -75,6 +85,31 @@ class MusicPlayer extends Component
                 'queue'              => $queue,
             ];
         }
+    }
+
+    public function addToHistory(int $songId): void
+    {
+        $userId = auth()->id();
+
+        PlayHistory::create([
+            'user_id'   => $userId,
+            'song_id'   => $songId,
+            'played_at' => now(),
+        ]);
+
+        // Keep only the latest 100 entries per user
+        $ids = PlayHistory::where('user_id', $userId)
+            ->orderByDesc('played_at')
+            ->pluck('id');
+
+        if ($ids->count() > 100) {
+            PlayHistory::whereIn('id', $ids->slice(100)->all())->delete();
+        }
+    }
+
+    public function clearHistory(): void
+    {
+        PlayHistory::where('user_id', auth()->id())->delete();
     }
 
     public function toggleFavourite(int $songId): void

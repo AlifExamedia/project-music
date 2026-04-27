@@ -1,5 +1,5 @@
 <div
-    x-data="musicPlayer({{ Js::from($songs) }}, {{ Js::from($favourites) }}, {{ Js::from($playlists) }}, {{ Js::from($session) }})"
+    x-data="musicPlayer({{ Js::from($songs) }}, {{ Js::from($favourites) }}, {{ Js::from($playlists) }}, {{ Js::from($session) }}, {{ Js::from($history) }})"
     x-init="init()"
     class="d-flex flex-column sp-root"
 >
@@ -17,18 +17,38 @@
                 <div class="sp-card rounded-3 p-3">
                     <div class="d-flex align-items-center gap-2 px-2 mb-3">
                         <i class="bi bi-music-note-beamed text-success fs-4"></i>
-                        <span class="fw-bold text-white">Laravel</span>
+                        <span class="fw-bold text-white">Examedia Music</span>
                     </div>
                     <nav class="d-flex flex-column gap-1">
+                        <a href="#" class="sp-nav-link" :class="currentView === 'search' ? 'active' : ''"
+                           @click.prevent="goTo('search'); $nextTick(() => $refs.searchInput && $refs.searchInput.focus())">
+                            <i class="bi bi-search"></i>
+                            <span>Search</span>
+                        </a>
                         <a href="#" class="sp-nav-link" :class="currentView === 'all' ? 'active' : ''"
-                           @click.prevent="currentView = 'all'; selectedPlaylistId = null">
+                           @click.prevent="goTo('all')">
                             <i class="bi bi-house-fill"></i>
                             <span>Home</span>
                         </a>
                         <a href="#" class="sp-nav-link" :class="currentView === 'favourites' ? 'active' : ''"
-                           @click.prevent="currentView = 'favourites'; selectedPlaylistId = null">
+                           @click.prevent="goTo('favourites')">
                             <i class="bi bi-heart-fill"></i>
                             <span>Liked Songs</span>
+                        </a>
+                        <a href="#" class="sp-nav-link" :class="currentView === 'albums' ? 'active' : ''"
+                           @click.prevent="goTo('albums')">
+                            <i class="bi bi-disc-fill"></i>
+                            <span>Albums</span>
+                        </a>
+                        <a href="#" class="sp-nav-link" :class="currentView === 'artists' ? 'active' : ''"
+                           @click.prevent="goTo('artists')">
+                            <i class="bi bi-person-fill"></i>
+                            <span>Artists</span>
+                        </a>
+                        <a href="#" class="sp-nav-link" :class="currentView === 'history' ? 'active' : ''"
+                           @click.prevent="goTo('history')">
+                            <i class="bi bi-clock-history"></i>
+                            <span>History</span>
                         </a>
                         <a href="{{ route('music.upload') }}" class="sp-nav-link">
                             <i class="bi bi-cloud-upload-fill"></i>
@@ -53,7 +73,7 @@
                         <div
                             class="sp-playlist-item rounded mx-2 my-1"
                             :class="currentView === 'favourites' ? 'sp-playlist-active' : ''"
-                            @click="currentView = 'favourites'; selectedPlaylistId = null"
+                            @click="goTo('favourites')"
                         >
                             <div class="sp-playlist-art rounded" style="background:linear-gradient(135deg,#450af5,#c4efd9);">
                                 <i class="bi bi-heart-fill text-white" style="font-size:.85rem;"></i>
@@ -68,7 +88,7 @@
                             <div
                                 class="sp-playlist-item rounded mx-2 my-1"
                                 :class="currentView === 'playlist' && selectedPlaylistId === playlist.id ? 'sp-playlist-active' : ''"
-                                @click="currentView = 'playlist'; selectedPlaylistId = playlist.id"
+                                @click="goTo('playlist', { playlistId: playlist.id })"
                             >
                                 <div class="sp-playlist-art rounded" style="background:#333;">
                                     <i class="bi bi-music-note-list" style="font-size:.85rem;color:var(--sp-muted);"></i>
@@ -92,13 +112,31 @@
         </div>
 
         {{-- ═══ MAIN CONTENT ═══ --}}
-        <div class="sp-card rounded-3 flex-grow-1 overflow-y-auto d-flex flex-column mx-2">
+        <div class="sp-card rounded-3 flex-grow-1 overflow-y-auto d-flex flex-column mx-2" x-ref="mainContent">
+
+            {{-- ─── Back / Forward navigation ─── --}}
+            <div class="sp-nav-history d-flex align-items-center gap-1 px-3 py-2 flex-shrink-0">
+                <button class="sp-hist-btn" :disabled="!canGoBack" @click="navBack()" title="Go back">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <button class="sp-hist-btn" :disabled="!canGoForward" @click="navForward()" title="Go forward">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+
+            {{-- ─── Headers ─── --}}
 
             {{-- Header: All Songs --}}
             <template x-if="currentView === 'all'">
                 <div class="sp-header-gradient sp-header-green flex-shrink-0 px-4 pb-3 pt-4">
                     <p class="text-uppercase fw-semibold small mb-1" style="color:rgba(255,255,255,.7);letter-spacing:.06em;">Good Evening</p>
-                    <h1 class="fw-bold mb-0" style="font-size:2rem;">Your Music</h1>
+                    <h1 class="fw-bold mb-3" style="font-size:2rem;">Your Music</h1>
+                    <div class="d-flex align-items-center gap-3" x-show="songs.length">
+                        <button class="sp-play-all-btn" @click="playAll(songs.map(s => s.id))" title="Play all songs">
+                            <i class="bi bi-play-fill"></i>
+                        </button>
+                        <span class="text-white-50 small fw-semibold" x-text="songs.length + ' songs'"></span>
+                    </div>
                 </div>
             </template>
 
@@ -110,7 +148,13 @@
                         <i class="bi bi-heart-fill text-white fs-3"></i>
                         Liked Songs
                     </h1>
-                    <p class="mb-0 small" style="color:rgba(255,255,255,.7);" x-text="favourites.length + ' songs'"></p>
+                    <p class="mb-3 small" style="color:rgba(255,255,255,.7);" x-text="favourites.length + ' songs'"></p>
+                    <div class="d-flex align-items-center gap-3" x-show="favourites.length">
+                        <button class="sp-play-all-btn" @click="playAll(filteredSongs.map(s => s.id))" title="Play liked songs">
+                            <i class="bi bi-play-fill"></i>
+                        </button>
+                        <span class="text-white-50 small fw-semibold">Play all liked songs</span>
+                    </div>
                 </div>
             </template>
 
@@ -119,8 +163,11 @@
                 <div class="sp-header-gradient sp-header-dark flex-shrink-0 px-4 pb-3 pt-4">
                     <p class="text-uppercase fw-semibold small mb-1" style="color:rgba(255,255,255,.7);letter-spacing:.06em;">Playlist</p>
                     <h1 class="fw-bold mb-1" style="font-size:2rem;" x-text="selectedPlaylist.title"></h1>
-                    <p class="mb-2 small" style="color:rgba(255,255,255,.6);" x-text="selectedPlaylist.description || ''"></p>
-                    <div class="d-flex align-items-center gap-2">
+                    <p class="mb-3 small" style="color:rgba(255,255,255,.6);" x-text="selectedPlaylist.description || ''"></p>
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                        <button class="sp-play-all-btn" @click="playAll(filteredSongs.map(s => s.id))" title="Play playlist" x-show="filteredSongs.length">
+                            <i class="bi bi-play-fill"></i>
+                        </button>
                         <span class="small" style="color:rgba(255,255,255,.5);" x-text="selectedPlaylist.songs.length + ' songs'"></span>
                         <button class="sp-pill-btn" @click="openEditPlaylist(selectedPlaylist)">
                             <i class="bi bi-pencil"></i> Edit
@@ -132,10 +179,292 @@
                 </div>
             </template>
 
-            {{-- Song grid / list --}}
-            <div class="px-4 pb-2 pt-1 flex-shrink-0">
+            {{-- Header: Albums browse --}}
+            <template x-if="currentView === 'albums'">
+                <div class="sp-header-gradient sp-header-dark flex-shrink-0 px-4 pb-3 pt-4">
+                    <p class="text-uppercase fw-semibold small mb-1" style="color:rgba(255,255,255,.7);letter-spacing:.06em;">Browse</p>
+                    <h1 class="fw-bold mb-0 d-flex align-items-center gap-3" style="font-size:2rem;">
+                        <i class="bi bi-disc-fill fs-3"></i> Albums
+                    </h1>
+                    <p class="mb-0 small mt-1" style="color:rgba(255,255,255,.7);" x-text="albumList.length + ' albums'"></p>
+                </div>
+            </template>
+
+            {{-- Header: Artists browse --}}
+            <template x-if="currentView === 'artists'">
+                <div class="sp-header-gradient sp-header-dark flex-shrink-0 px-4 pb-3 pt-4">
+                    <p class="text-uppercase fw-semibold small mb-1" style="color:rgba(255,255,255,.7);letter-spacing:.06em;">Browse</p>
+                    <h1 class="fw-bold mb-0 d-flex align-items-center gap-3" style="font-size:2rem;">
+                        <i class="bi bi-person-fill fs-3"></i> Artists
+                    </h1>
+                    <p class="mb-0 small mt-1" style="color:rgba(255,255,255,.7);" x-text="artistList.length + ' artists'"></p>
+                </div>
+            </template>
+
+            {{-- Header: Album detail --}}
+            <template x-if="currentView === 'album'">
+                <div class="sp-header-gradient sp-header-dark flex-shrink-0 px-4 pb-3 pt-3">
+                    <button class="btn btn-link p-0 text-decoration-none mb-2 d-inline-flex align-items-center gap-1"
+                            style="color:rgba(255,255,255,.6);font-size:.82rem;"
+                            @click="goTo('albums')">
+                        <i class="bi bi-chevron-left"></i> Albums
+                    </button>
+                    <div class="d-flex align-items-end gap-4">
+                        <div class="rounded-3 overflow-hidden flex-shrink-0 shadow" style="width:130px;height:130px;background:#333;">
+                            <template x-if="filteredSongs.length && filteredSongs[0].artwork_url">
+                                <img :src="filteredSongs[0].artwork_url" class="w-100 h-100 object-fit-cover" alt="">
+                            </template>
+                            <template x-if="!filteredSongs.length || !filteredSongs[0].artwork_url">
+                                <div class="w-100 h-100 d-flex align-items-center justify-content-center">
+                                    <i class="bi bi-disc text-secondary" style="font-size:3rem;"></i>
+                                </div>
+                            </template>
+                        </div>
+                        <div>
+                            <p class="text-uppercase fw-semibold small mb-1" style="color:rgba(255,255,255,.7);letter-spacing:.06em;">Album</p>
+                            <h1 class="fw-bold mb-1" style="font-size:1.8rem;line-height:1.1;" x-text="selectedAlbum"></h1>
+                            <p class="mb-1 small" style="color:rgba(255,255,255,.7);">
+                                <span
+                                    x-text="filteredSongs[0]?.artist ?? ''"
+                                    x-show="filteredSongs[0]?.artist"
+                                    @click="viewArtist(filteredSongs[0].artist)"
+                                    style="cursor:pointer;"
+                                    class="fw-semibold text-white"
+                                    :title="'See all songs by ' + (filteredSongs[0]?.artist ?? '')">
+                                </span>
+                            </p>
+                            <p class="mb-3 small" style="color:rgba(255,255,255,.5);" x-text="filteredSongs.length + ' songs'"></p>
+                            <div class="d-flex align-items-center gap-3" x-show="filteredSongs.length">
+                                <button class="sp-play-all-btn" @click="playAll(filteredSongs.map(s => s.id))" title="Play album">
+                                    <i class="bi bi-play-fill"></i>
+                                </button>
+                                <span class="text-white-50 small fw-semibold">Play album</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            {{-- Header: Artist detail --}}
+            <template x-if="currentView === 'artist'">
+                <div class="sp-header-gradient sp-header-dark flex-shrink-0 px-4 pb-3 pt-3">
+                    <button class="btn btn-link p-0 text-decoration-none mb-2 d-inline-flex align-items-center gap-1"
+                            style="color:rgba(255,255,255,.6);font-size:.82rem;"
+                            @click="goTo('artists')">
+                        <i class="bi bi-chevron-left"></i> Artists
+                    </button>
+                    <div class="d-flex align-items-end gap-4">
+                        <div class="rounded-circle overflow-hidden flex-shrink-0 shadow" style="width:130px;height:130px;background:#333;">
+                            <template x-if="filteredSongs.length && filteredSongs[0].artwork_url">
+                                <img :src="filteredSongs[0].artwork_url" class="w-100 h-100 object-fit-cover" alt="">
+                            </template>
+                            <template x-if="!filteredSongs.length || !filteredSongs[0].artwork_url">
+                                <div class="w-100 h-100 d-flex align-items-center justify-content-center">
+                                    <i class="bi bi-person text-secondary" style="font-size:3rem;"></i>
+                                </div>
+                            </template>
+                        </div>
+                        <div>
+                            <p class="text-uppercase fw-semibold small mb-1" style="color:rgba(255,255,255,.7);letter-spacing:.06em;">Artist</p>
+                            <h1 class="fw-bold mb-1" style="font-size:1.8rem;line-height:1.1;" x-text="selectedArtist"></h1>
+                            <p class="mb-3 small" style="color:rgba(255,255,255,.5);" x-text="filteredSongs.length + ' songs'"></p>
+                            <div class="d-flex align-items-center gap-3" x-show="filteredSongs.length">
+                                <button class="sp-play-all-btn" @click="playAll(filteredSongs.map(s => s.id))" title="Play all songs by this artist">
+                                    <i class="bi bi-play-fill"></i>
+                                </button>
+                                <span class="text-white-50 small fw-semibold">Play all</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            {{-- Header: Search --}}
+            <template x-if="currentView === 'search'">
+                <div class="sp-header-gradient sp-header-teal flex-shrink-0 px-4 pb-3 pt-4">
+                    <p class="text-uppercase fw-semibold small mb-1" style="color:rgba(255,255,255,.7);letter-spacing:.06em;">Find</p>
+                    <h1 class="fw-bold mb-0 d-flex align-items-center gap-3" style="font-size:2rem;">
+                        <i class="bi bi-search fs-3"></i> Search
+                    </h1>
+                </div>
+            </template>
+
+            {{-- Header: History --}}
+            <template x-if="currentView === 'history'">
+                <div class="sp-header-gradient sp-header-dark flex-shrink-0 px-4 pb-3 pt-4">
+                    <p class="text-uppercase fw-semibold small mb-1" style="color:rgba(255,255,255,.7);letter-spacing:.06em;">Recent</p>
+                    <h1 class="fw-bold mb-1 d-flex align-items-center gap-3" style="font-size:2rem;">
+                        <i class="bi bi-clock-history fs-3"></i> History
+                    </h1>
+                    <p class="mb-3 small" style="color:rgba(255,255,255,.7);" x-text="history.length + ' songs'"></p>
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                        <button class="sp-play-all-btn" @click="playAll(filteredSongs.map(s => s.id))" title="Play all history" x-show="filteredSongs.length">
+                            <i class="bi bi-play-fill"></i>
+                        </button>
+                        <span class="text-white-50 small fw-semibold" x-show="filteredSongs.length">Play all</span>
+                        <button class="sp-pill-btn sp-pill-btn-danger" @click="clearHistory()" x-show="history.length">
+                            <i class="bi bi-trash"></i> Clear History
+                        </button>
+                    </div>
+                </div>
+            </template>
+
+            {{-- ─── Search Filter Bar ─── --}}
+            <div x-show="currentView === 'search'" class="px-4 pt-3 pb-1 flex-shrink-0">
+                <div class="row g-2 align-items-center">
+                    {{-- Text input --}}
+                    <div class="col-12 col-md">
+                        <div class="input-group">
+                            <span class="input-group-text sp-filter-addon">
+                                <i class="bi bi-search"></i>
+                            </span>
+                            <input
+                                type="text"
+                                x-model="searchQuery"
+                                x-ref="searchInput"
+                                class="form-control sp-filter-input"
+                                placeholder="Search songs…"
+                                @keydown.escape="searchQuery = ''"
+                            >
+                            <button
+                                class="input-group-text sp-filter-clear-btn"
+                                x-show="searchQuery"
+                                @click="searchQuery = ''"
+                                title="Clear"
+                            >
+                                <i class="bi bi-x-lg" style="font-size:.75rem;"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    {{-- Search by --}}
+                    <div class="col-6 col-sm-auto">
+                        <select x-model="searchBy" class="form-select sp-filter-select" title="Search by field">
+                            <option value="all">All Fields</option>
+                            <option value="name">Title</option>
+                            <option value="artist">Artist</option>
+                            <option value="album">Album</option>
+                        </select>
+                    </div>
+
+                    {{-- Year --}}
+                    <div class="col-6 col-sm-auto">
+                        <select x-model="filterYear" class="form-select sp-filter-select" title="Filter by year">
+                            <option value="">All Years</option>
+                            <template x-for="year in yearList" :key="year">
+                                <option :value="year" x-text="year"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    {{-- Genre --}}
+                    <div class="col-6 col-sm-auto">
+                        <select x-model="filterGenre" class="form-select sp-filter-select" title="Filter by genre">
+                            <option value="">All Genres</option>
+                            <template x-for="genre in genreList" :key="genre">
+                                <option :value="genre" x-text="genre"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    {{-- Clear all --}}
+                    <div class="col-auto" x-show="searchQuery || filterYear || filterGenre">
+                        <button
+                            class="sp-pill-btn"
+                            @click="searchQuery = ''; searchBy = 'all'; filterYear = ''; filterGenre = ''"
+                            title="Clear all filters"
+                        >
+                            <i class="bi bi-x-circle"></i> Clear
+                        </button>
+                    </div>
+                </div>
+
+                {{-- Result count + play button --}}
+                <div class="mt-2 d-flex align-items-center gap-3"
+                     x-show="searchQuery || filterYear || filterGenre">
+                    <span class="text-secondary" style="font-size:.8rem;"
+                          x-text="filteredSongs.length + ' result' + (filteredSongs.length !== 1 ? 's' : '') + ' found'">
+                    </span>
+                    <button class="sp-play-all-btn sp-play-all-btn-sm"
+                            x-show="filteredSongs.length"
+                            @click="playAll(filteredSongs.map(s => s.id))"
+                            title="Play all results">
+                        <i class="bi bi-play-fill"></i>
+                    </button>
+                    <span class="text-white-50 small" x-show="filteredSongs.length">Play all results</span>
+                </div>
+            </div>
+
+            {{-- ─── Albums Browse Grid ─── --}}
+            <div x-show="currentView === 'albums'" class="px-4 pb-4 pt-3 flex-grow-1">
+                <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-xl-5 g-3">
+                    <template x-for="album in albumList" :key="album.name">
+                        <div class="col">
+                            <div class="sp-song-card rounded-3 h-100" @click="viewAlbum(album.name)" style="cursor:pointer;">
+                                <div class="sp-song-card-art rounded-2">
+                                    <template x-if="album.artwork_url">
+                                        <img :src="album.artwork_url" class="w-100 h-100 object-fit-cover rounded-2" alt="">
+                                    </template>
+                                    <template x-if="!album.artwork_url">
+                                        <div class="sp-song-card-art-placeholder">
+                                            <i class="bi bi-disc text-secondary fs-4"></i>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="pt-3 px-1 pb-1">
+                                    <div class="text-truncate small fw-semibold" x-text="album.name"></div>
+                                    <div class="text-truncate mt-1" x-text="album.artist ?? 'Various Artists'" style="font-size:.8rem;color:var(--sp-muted);"></div>
+                                    <div class="mt-1" style="font-size:.75rem;color:var(--sp-muted);" x-text="album.count + ' songs'"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <div x-show="albumList.length === 0" class="text-center py-5">
+                    <i class="bi bi-disc text-secondary" style="font-size:3rem;"></i>
+                    <p class="text-secondary mt-3 mb-1">No albums found.</p>
+                    <p class="text-secondary small">Songs with album metadata will appear here.</p>
+                </div>
+            </div>
+
+            {{-- ─── Artists Browse Grid ─── --}}
+            <div x-show="currentView === 'artists'" class="px-4 pb-4 pt-3 flex-grow-1">
+                <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-xl-5 g-3">
+                    <template x-for="artist in artistList" :key="artist.name">
+                        <div class="col">
+                            <div class="sp-song-card rounded-3 h-100 text-center" @click="viewArtist(artist.name)" style="cursor:pointer;">
+                                <div class="sp-song-card-art rounded-circle mx-auto" style="border-radius:50%!important;">
+                                    <template x-if="artist.artwork_url">
+                                        <img :src="artist.artwork_url" class="w-100 h-100 object-fit-cover" style="border-radius:50%;" alt="">
+                                    </template>
+                                    <template x-if="!artist.artwork_url">
+                                        <div class="sp-song-card-art-placeholder" style="border-radius:50%;">
+                                            <i class="bi bi-person text-secondary fs-4"></i>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="pt-3 px-1 pb-1">
+                                    <div class="text-truncate small fw-semibold" x-text="artist.name"></div>
+                                    <div class="mt-1" style="font-size:.75rem;color:var(--sp-muted);" x-text="artist.count + ' songs'"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <div x-show="artistList.length === 0" class="text-center py-5">
+                    <i class="bi bi-person text-secondary" style="font-size:3rem;"></i>
+                    <p class="text-secondary mt-3 mb-1">No artists found.</p>
+                    <p class="text-secondary small">Songs with artist metadata will appear here.</p>
+                </div>
+            </div>
+
+            {{-- ─── Song grid / list (all, favourites, playlist, album, artist, search views) ─── --}}
+            <div x-show="!['albums','artists'].includes(currentView)" class="px-4 pb-2 pt-1 flex-shrink-0">
                 <div class="d-flex align-items-center justify-content-between mb-3">
-                    <h2 class="fw-bold mb-0 fs-5">Songs</h2>
+                    <h2 class="fw-bold mb-0 fs-5">
+                        <span x-show="currentView !== 'search'">Songs</span>
+                        <span x-show="currentView === 'search'" x-text="filteredSongs.length + (filteredSongs.length !== 1 ? ' Songs' : ' Song')"></span>
+                    </h2>
                     <div class="d-flex align-items-center gap-2">
                         <button class="btn btn-link text-secondary text-decoration-none small fw-semibold text-uppercase p-0"
                                 style="letter-spacing:.05em;"
@@ -212,7 +541,15 @@
                             </div>
                             <div class="pt-3 px-1 pb-1">
                                 <div class="text-truncate small fw-semibold" :class="currentSongId === song.id ? 'sp-active-text' : ''" x-text="song.title"></div>
-                                <div class="text-truncate mt-1" x-text="song.artist ?? 'Unknown Artist'" style="font-size:.8rem;color:var(--sp-muted);"></div>
+                                {{-- Clickable artist name --}}
+                                <div
+                                    class="text-truncate mt-1"
+                                    style="font-size:.8rem;color:var(--sp-muted);"
+                                    :style="song.artist ? 'cursor:pointer;' : ''"
+                                    :title="song.artist ? 'See all songs by ' + song.artist : ''"
+                                    @click.stop="song.artist && viewArtist(song.artist)"
+                                    x-text="song.artist ?? 'Unknown Artist'"
+                                ></div>
                                 <template x-if="songPlaylists(song.id).length > 0">
                                     <div class="d-flex flex-wrap gap-1 mt-1">
                                         <template x-for="pl in songPlaylists(song.id)" :key="pl.id">
@@ -277,8 +614,15 @@
                                     <div class="text-truncate fw-semibold" style="font-size:.88rem;"
                                          :class="currentSongId === song.id ? 'sp-active-text' : ''"
                                          x-text="song.title"></div>
-                                    <div class="text-truncate" style="font-size:.78rem;color:var(--sp-muted);"
-                                         x-text="song.artist ?? 'Unknown Artist'"></div>
+                                    {{-- Clickable artist in list view --}}
+                                    <div
+                                        class="text-truncate"
+                                        style="font-size:.78rem;color:var(--sp-muted);"
+                                        :style="song.artist ? 'cursor:pointer;' : ''"
+                                        :title="song.artist ? 'See all songs by ' + song.artist : ''"
+                                        @click.stop="song.artist && viewArtist(song.artist)"
+                                        x-text="song.artist ?? 'Unknown Artist'"
+                                    ></div>
                                     <template x-if="songPlaylists(song.id).length > 0">
                                         <div class="d-flex flex-wrap gap-1 mt-1">
                                             <template x-for="pl in songPlaylists(song.id)" :key="pl.id">
@@ -289,10 +633,16 @@
                                 </div>
                             </div>
 
-                            {{-- Album --}}
+                            {{-- Album (clickable) --}}
                             <div class="sp-list-col-album d-none d-md-block overflow-hidden">
-                                <span class="text-truncate d-block" style="font-size:.82rem;color:var(--sp-muted);"
-                                      x-text="song.album ?? ''"></span>
+                                <span
+                                    class="text-truncate d-block"
+                                    style="font-size:.82rem;color:var(--sp-muted);"
+                                    :style="song.album ? 'cursor:pointer;' : ''"
+                                    :title="song.album ? 'See album: ' + song.album : ''"
+                                    @click.stop="song.album && viewAlbum(song.album)"
+                                    x-text="song.album ?? ''">
+                                </span>
                             </div>
 
                             {{-- Action buttons --}}
@@ -368,6 +718,32 @@
                             </p>
                         </div>
                     </template>
+                    <template x-if="currentView === 'album'">
+                        <div>
+                            <i class="bi bi-disc text-secondary" style="font-size:3rem;"></i>
+                            <p class="text-secondary mt-3 mb-1">No songs in this album.</p>
+                        </div>
+                    </template>
+                    <template x-if="currentView === 'artist'">
+                        <div>
+                            <i class="bi bi-person text-secondary" style="font-size:3rem;"></i>
+                            <p class="text-secondary mt-3 mb-1">No songs from this artist.</p>
+                        </div>
+                    </template>
+                    <template x-if="currentView === 'search'">
+                        <div>
+                            <i class="bi bi-search text-secondary" style="font-size:3rem;"></i>
+                            <p class="text-secondary mt-3 mb-1">No results found.</p>
+                            <p class="text-secondary small">Try a different keyword or adjust the filters.</p>
+                        </div>
+                    </template>
+                    <template x-if="currentView === 'history'">
+                        <div>
+                            <i class="bi bi-clock-history text-secondary" style="font-size:3rem;"></i>
+                            <p class="text-secondary mt-3 mb-1">No songs played yet.</p>
+                            <p class="text-secondary small">Songs you play will appear here.</p>
+                        </div>
+                    </template>
                 </div>
             </div>
         </div>
@@ -390,7 +766,17 @@
                 {{-- Now Playing in queue --}}
                 <div x-show="currentSong" class="px-3 py-2 flex-shrink-0 border-bottom border-secondary border-opacity-10">
                     <p class="text-uppercase fw-semibold mb-2" style="font-size:.68rem;letter-spacing:.05em;color:var(--sp-muted);">Now Playing</p>
-                    <div class="d-flex align-items-center gap-2">
+                    <div
+                        class="d-flex align-items-center gap-2 rounded-2 px-1 py-1"
+                        style="cursor:default;"
+                        @contextmenu.prevent="currentSong && openContextMenu($event, currentSong.id)"
+                        @mousedown="currentSong && startLongPress($event, currentSong.id)"
+                        @mouseup="cancelLongPress()"
+                        @mouseleave="cancelLongPress()"
+                        @touchstart.passive="currentSong && startLongPress($event, currentSong.id)"
+                        @touchend="cancelLongPress()"
+                        @touchmove="cancelLongPress()"
+                    >
                         <div class="sp-queue-art rounded-2">
                             <template x-if="currentSong && currentSong.artwork_url">
                                 <img :src="currentSong.artwork_url" class="w-100 h-100 object-fit-cover rounded-2" alt="">
@@ -401,8 +787,20 @@
                         </div>
                         <div class="overflow-hidden flex-grow-1">
                             <div class="text-truncate sp-active-text fw-semibold" style="font-size:.82rem;" x-text="currentSong ? currentSong.title : ''"></div>
-                            <div class="text-truncate" style="font-size:.74rem;color:var(--sp-muted);" x-text="currentSong ? (currentSong.artist ?? 'Unknown Artist') : ''"></div>
+                            <div class="text-truncate" style="font-size:.74rem;color:var(--sp-muted);"
+                                 :style="currentSong?.artist ? 'cursor:pointer;' : ''"
+                                 @click="currentSong?.artist && viewArtist(currentSong.artist)"
+                                 x-text="currentSong ? (currentSong.artist ?? 'Unknown Artist') : ''"></div>
                         </div>
+                        <button
+                            class="sp-icon-btn flex-shrink-0"
+                            :class="currentSong && isFavourite(currentSong.id) ? 'sp-icon-btn-active' : ''"
+                            @click.stop="currentSong && toggleFavourite(currentSong.id)"
+                            :title="currentSong && isFavourite(currentSong.id) ? 'Remove from Liked Songs' : 'Add to Liked Songs'"
+                            style="font-size:.85rem;"
+                        >
+                            <i class="bi" :class="currentSong && isFavourite(currentSong.id) ? 'bi-heart-fill' : 'bi-heart'"></i>
+                        </button>
                     </div>
                 </div>
 
@@ -412,22 +810,53 @@
                         <div>
                             <p class="text-uppercase fw-semibold px-3 pt-2 mb-1" style="font-size:.68rem;letter-spacing:.05em;color:var(--sp-muted);">Next in Queue</p>
                             <template x-for="(song, index) in queueSongs" :key="index">
-                                <div class="sp-queue-item d-flex align-items-center gap-2 px-3 py-2" @click="playFromQueue(index)">
-                                    <div class="sp-queue-art rounded-2 flex-shrink-0">
+                                <div
+                                    class="sp-queue-item d-flex align-items-center gap-2 px-2 py-2 rounded-2 mx-1"
+                                    @dragover="queueDragOver($event, $el, index)"
+                                    @drop="queueDrop($event, $el, index)"
+                                    @contextmenu.prevent="openQueueContextMenu($event, song.id, index)"
+                                    @mousedown="startQueueLongPress($event, song.id, index)"
+                                    @mouseup="cancelLongPress()"
+                                    @mouseleave="cancelLongPress()"
+                                    @touchstart.passive="startQueueLongPress($event, song.id, index)"
+                                    @touchend="cancelLongPress()"
+                                    @touchmove="cancelLongPress()"
+                                >
+                                    {{-- Drag handle --}}
+                                    <div class="sp-queue-drag-handle flex-shrink-0"
+                                         draggable="true"
+                                         @dragstart="cancelLongPress(); queueDragStart($event, index)"
+                                         @dragend="queueDragEnd($el)">
+                                        <i class="bi bi-grip-vertical"></i>
+                                    </div>
+
+                                    {{-- Artwork: click to play --}}
+                                    <div class="sp-queue-art rounded-2 flex-shrink-0 position-relative"
+                                         @click.stop="playFromQueue(index)"
+                                         style="cursor:pointer;">
                                         <template x-if="song && song.artwork_url">
                                             <img :src="song.artwork_url" class="w-100 h-100 object-fit-cover rounded-2" alt="">
                                         </template>
                                         <template x-if="!song || !song.artwork_url">
                                             <i class="bi bi-music-note text-secondary" style="font-size:.8rem;"></i>
                                         </template>
+                                        <div class="sp-queue-art-play">
+                                            <i class="bi bi-play-fill" style="font-size:.65rem;color:#000;"></i>
+                                        </div>
                                     </div>
+
+                                    {{-- Title + clickable artist --}}
                                     <div class="overflow-hidden flex-grow-1">
                                         <div class="text-truncate fw-medium" style="font-size:.82rem;" x-text="song ? song.title : ''"></div>
-                                        <div class="text-truncate" style="font-size:.74rem;color:var(--sp-muted);" x-text="song ? (song.artist ?? 'Unknown Artist') : ''"></div>
+                                        <div
+                                            class="text-truncate"
+                                            style="font-size:.74rem;color:var(--sp-muted);"
+                                            :style="song?.artist ? 'cursor:pointer;' : ''"
+                                            @click.stop="song?.artist && viewArtist(song.artist)"
+                                            :title="song?.artist ? 'Go to ' + song.artist : ''"
+                                            x-text="song ? (song.artist ?? 'Unknown Artist') : ''"
+                                        ></div>
                                     </div>
-                                    <button class="sp-queue-remove-btn sp-icon-btn flex-shrink-0" @click.stop="removeFromQueue(index)" title="Remove">
-                                        <i class="bi bi-x" style="font-size:.9rem;"></i>
-                                    </button>
                                 </div>
                             </template>
                         </div>
@@ -470,7 +899,12 @@
 
             <div class="overflow-hidden" style="min-width:0;">
                 <div class="text-truncate fw-semibold" style="font-size:.85rem;" x-text="currentSong ? currentSong.title : 'Not playing'"></div>
-                <div class="text-truncate" style="font-size:.75rem;color:var(--sp-muted);" x-text="currentSong ? (currentSong.artist ?? 'Unknown Artist') : ''"></div>
+                <div class="text-truncate"
+                     style="font-size:.75rem;color:var(--sp-muted);"
+                     :style="currentSong?.artist ? 'cursor:pointer;' : ''"
+                     @click="currentSong?.artist && viewArtist(currentSong.artist)"
+                     :title="currentSong?.artist ? 'See all songs by ' + currentSong.artist : ''"
+                     x-text="currentSong ? (currentSong.artist ?? 'Unknown Artist') : ''"></div>
             </div>
 
             <button
@@ -591,32 +1025,223 @@
         :style="`top:${contextMenu.y}px;left:${contextMenu.x}px;`"
         class="sp-context-menu"
     >
-        <button class="sp-ctx-item" @click="play(contextMenu.songId); closeContextMenu()">
-            <i class="bi" :class="currentSongId === contextMenu.songId && playing ? 'bi-pause-fill' : 'bi-play-fill'"></i>
-            <span x-text="currentSongId === contextMenu.songId && playing ? 'Pause' : 'Play'"></span>
-        </button>
-        <div class="sp-ctx-divider"></div>
-        <button class="sp-ctx-item" @click="toggleFavourite(contextMenu.songId); closeContextMenu()">
-            <i class="bi" :class="isFavourite(contextMenu.songId) ? 'bi-heart-fill sp-active-text' : 'bi-heart'"></i>
-            <span x-text="isFavourite(contextMenu.songId) ? 'Remove from Liked Songs' : 'Add to Liked Songs'"></span>
-        </button>
-        <button class="sp-ctx-item" @click="addToQueue(contextMenu.songId); closeContextMenu()">
-            <i class="bi bi-collection-play"></i>
-            <span>Add to Queue</span>
-        </button>
-        <button class="sp-ctx-item" @click="openAddToPlaylist(contextMenu.songId); closeContextMenu()" x-show="playlists.length > 0">
-            <i class="bi bi-plus-square"></i>
-            <span>Add to Playlist</span>
-        </button>
-        <template x-if="currentView === 'playlist'">
+        {{-- Regular song context menu --}}
+        <template x-if="!contextMenu.fromQueue">
             <div>
-                <div class="sp-ctx-divider"></div>
-                <button class="sp-ctx-item sp-ctx-item-danger" @click="toggleSongInPlaylist(selectedPlaylistId, contextMenu.songId); closeContextMenu()">
-                    <i class="bi bi-x-circle"></i>
-                    <span>Remove from Playlist</span>
+                <button class="sp-ctx-item" @click="play(contextMenu.songId); closeContextMenu()">
+                    <i class="bi" :class="currentSongId === contextMenu.songId && playing ? 'bi-pause-fill' : 'bi-play-fill'"></i>
+                    <span x-text="currentSongId === contextMenu.songId && playing ? 'Pause' : 'Play'"></span>
                 </button>
+                <div class="sp-ctx-divider"></div>
+                <button class="sp-ctx-item" @click="toggleFavourite(contextMenu.songId); closeContextMenu()">
+                    <i class="bi" :class="isFavourite(contextMenu.songId) ? 'bi-heart-fill sp-active-text' : 'bi-heart'"></i>
+                    <span x-text="isFavourite(contextMenu.songId) ? 'Remove from Liked Songs' : 'Add to Liked Songs'"></span>
+                </button>
+                <button class="sp-ctx-item" @click="addToQueue(contextMenu.songId); closeContextMenu()">
+                    <i class="bi bi-collection-play"></i>
+                    <span>Add to Queue</span>
+                </button>
+                <button class="sp-ctx-item" @click="openAddToPlaylist(contextMenu.songId); closeContextMenu()" x-show="playlists.length > 0">
+                    <i class="bi bi-plus-square"></i>
+                    <span>Add to Playlist</span>
+                </button>
+                <button class="sp-ctx-item sp-ctx-item-playlist-info"
+                        x-show="songPlaylists(contextMenu.songId).length > 0"
+                        @click="openSongPlaylists(contextMenu.songId); closeContextMenu()">
+                    <i class="bi bi-collection-fill" style="color:var(--sp-green);"></i>
+                    <span x-text="'In ' + songPlaylists(contextMenu.songId).length + ' playlist' + (songPlaylists(contextMenu.songId).length !== 1 ? 's' : '')"></span>
+                    <i class="bi bi-chevron-right ms-auto" style="font-size:.7rem;color:var(--sp-muted);"></i>
+                </button>
+                <div class="sp-ctx-divider"></div>
+                <button class="sp-ctx-item"
+                        x-show="contextMenuSong && contextMenuSong.artist"
+                        @click="contextMenuSong && viewArtist(contextMenuSong.artist); closeContextMenu()">
+                    <i class="bi bi-person"></i>
+                    <span>Go to Artist</span>
+                </button>
+                <button class="sp-ctx-item"
+                        x-show="contextMenuSong && contextMenuSong.album"
+                        @click="contextMenuSong && viewAlbum(contextMenuSong.album); closeContextMenu()">
+                    <i class="bi bi-disc"></i>
+                    <span>Go to Album</span>
+                </button>
+                <template x-if="currentView === 'playlist'">
+                    <div>
+                        <div class="sp-ctx-divider"></div>
+                        <button class="sp-ctx-item sp-ctx-item-danger" @click="toggleSongInPlaylist(selectedPlaylistId, contextMenu.songId); closeContextMenu()">
+                            <i class="bi bi-x-circle"></i>
+                            <span>Remove from Playlist</span>
+                        </button>
+                    </div>
+                </template>
             </div>
         </template>
+
+        {{-- Queue item context menu --}}
+        <template x-if="contextMenu.fromQueue">
+            <div>
+                {{-- Primary action --}}
+                <button class="sp-ctx-item" @click="playFromQueue(contextMenu.queueIndex); closeContextMenu()">
+                    <i class="bi bi-play-circle-fill sp-active-text"></i>
+                    <span>Play Now</span>
+                </button>
+
+                <div class="sp-ctx-divider"></div>
+
+                {{-- Liked & Playlist --}}
+                <button class="sp-ctx-item" @click="toggleFavourite(contextMenu.songId); closeContextMenu()">
+                    <i class="bi" :class="isFavourite(contextMenu.songId) ? 'bi-heart-fill sp-active-text' : 'bi-heart'"></i>
+                    <span x-text="isFavourite(contextMenu.songId) ? 'Remove from Liked Songs' : 'Add to Liked Songs'"></span>
+                </button>
+                <button class="sp-ctx-item" @click="openAddToPlaylist(contextMenu.songId); closeContextMenu()" x-show="playlists.length > 0">
+                    <i class="bi bi-plus-square"></i>
+                    <span>Add to Playlist</span>
+                </button>
+                <button class="sp-ctx-item sp-ctx-item-playlist-info"
+                        x-show="songPlaylists(contextMenu.songId).length > 0"
+                        @click="openSongPlaylists(contextMenu.songId); closeContextMenu()">
+                    <i class="bi bi-collection-fill" style="color:var(--sp-green);"></i>
+                    <span x-text="'In ' + songPlaylists(contextMenu.songId).length + ' playlist' + (songPlaylists(contextMenu.songId).length !== 1 ? 's' : '')"></span>
+                    <i class="bi bi-chevron-right ms-auto" style="font-size:.7rem;color:var(--sp-muted);"></i>
+                </button>
+
+                <div class="sp-ctx-divider"></div>
+
+                {{-- Reorder actions --}}
+                <button class="sp-ctx-item"
+                        :class="contextMenu.queueIndex === 0 ? 'sp-ctx-item-disabled' : ''"
+                        @click="contextMenu.queueIndex > 0 && (moveQueueItemToTop(contextMenu.queueIndex), closeContextMenu())">
+                    <i class="bi bi-chevron-double-up"></i>
+                    <span>Move to Top</span>
+                </button>
+                <button class="sp-ctx-item"
+                        :class="contextMenu.queueIndex === 0 ? 'sp-ctx-item-disabled' : ''"
+                        @click="contextMenu.queueIndex > 0 && (moveQueueItem(contextMenu.queueIndex, -1), closeContextMenu())">
+                    <i class="bi bi-chevron-up"></i>
+                    <span>Move Up</span>
+                </button>
+                <button class="sp-ctx-item"
+                        :class="contextMenu.queueIndex === queue.length - 1 ? 'sp-ctx-item-disabled' : ''"
+                        @click="contextMenu.queueIndex < queue.length - 1 && (moveQueueItem(contextMenu.queueIndex, 1), closeContextMenu())">
+                    <i class="bi bi-chevron-down"></i>
+                    <span>Move Down</span>
+                </button>
+                <button class="sp-ctx-item"
+                        :class="contextMenu.queueIndex === queue.length - 1 ? 'sp-ctx-item-disabled' : ''"
+                        @click="contextMenu.queueIndex < queue.length - 1 && (moveQueueItemToBottom(contextMenu.queueIndex), closeContextMenu())">
+                    <i class="bi bi-chevron-double-down"></i>
+                    <span>Move to Bottom</span>
+                </button>
+
+                <div class="sp-ctx-divider"></div>
+
+                {{-- Remove --}}
+                <button class="sp-ctx-item sp-ctx-item-danger" @click="removeFromQueue(contextMenu.queueIndex); closeContextMenu()">
+                    <i class="bi bi-x-circle"></i>
+                    <span>Remove from Queue</span>
+                </button>
+
+                {{-- Navigation (conditional) --}}
+                <template x-if="contextMenuSong && (contextMenuSong.artist || contextMenuSong.album)">
+                    <div>
+                        <div class="sp-ctx-divider"></div>
+                        <button class="sp-ctx-item"
+                                x-show="contextMenuSong && contextMenuSong.artist"
+                                @click="contextMenuSong && viewArtist(contextMenuSong.artist); closeContextMenu()">
+                            <i class="bi bi-person"></i>
+                            <span>Go to Artist</span>
+                        </button>
+                        <button class="sp-ctx-item"
+                                x-show="contextMenuSong && contextMenuSong.album"
+                                @click="contextMenuSong && viewAlbum(contextMenuSong.album); closeContextMenu()">
+                            <i class="bi bi-disc"></i>
+                            <span>Go to Album</span>
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </template>
+    </div>
+
+    {{-- ── SONG PLAYLISTS MODAL ── --}}
+    <div
+        x-cloak
+        x-show="showSongPlaylistsModal"
+        x-transition.opacity
+        class="sp-modal-backdrop"
+        @click.self="showSongPlaylistsModal = false"
+        @keydown.escape.window="showSongPlaylistsModal = false"
+    >
+        <div class="sp-modal-box rounded-3 shadow-lg overflow-hidden" style="width:400px;">
+            {{-- Header --}}
+            <div class="d-flex align-items-center gap-3 px-4 pt-4 pb-3 border-bottom border-secondary border-opacity-25">
+                <div class="sp-spm-art rounded-2 flex-shrink-0">
+                    <template x-if="songPlaylistsModalSong && songPlaylistsModalSong.artwork_url">
+                        <img :src="songPlaylistsModalSong.artwork_url" class="w-100 h-100 object-fit-cover rounded-2" alt="">
+                    </template>
+                    <template x-if="!songPlaylistsModalSong || !songPlaylistsModalSong.artwork_url">
+                        <div class="w-100 h-100 d-flex align-items-center justify-content-center">
+                            <i class="bi bi-music-note text-secondary"></i>
+                        </div>
+                    </template>
+                </div>
+                <div class="overflow-hidden flex-grow-1">
+                    <div class="text-truncate fw-bold" style="font-size:.95rem;" x-text="songPlaylistsModalSong ? songPlaylistsModalSong.title : ''"></div>
+                    <div class="text-truncate" style="font-size:.8rem;color:var(--sp-muted);" x-text="songPlaylistsModalSong ? (songPlaylistsModalSong.artist ?? 'Unknown Artist') : ''"></div>
+                </div>
+                <button @click="showSongPlaylistsModal = false" class="sp-icon-btn flex-shrink-0" style="color:var(--sp-muted);font-size:1.1rem;" title="Close">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
+            {{-- Subtitle --}}
+            <div class="px-4 pt-3 pb-1">
+                <p class="text-uppercase fw-semibold mb-0" style="font-size:.72rem;letter-spacing:.05em;color:var(--sp-muted);">
+                    <i class="bi bi-collection-fill me-1" style="color:var(--sp-green);"></i>
+                    Saved in <span x-text="songPlaylistsModalPlaylists.length"></span> playlist<span x-text="songPlaylistsModalPlaylists.length !== 1 ? 's' : ''"></span>
+                </p>
+            </div>
+
+            {{-- Playlist list --}}
+            <div style="max-height:320px;" class="overflow-y-auto px-3 pb-2 pt-1">
+                <template x-for="pl in songPlaylistsModalPlaylists" :key="pl.id">
+                    <div class="sp-spm-row rounded-2 d-flex align-items-center gap-3 px-3 py-2 my-1">
+                        <div class="d-flex align-items-center justify-content-center rounded-2 flex-shrink-0" style="width:40px;height:40px;background:#333;">
+                            <i class="bi bi-music-note-list text-secondary" style="font-size:.9rem;"></i>
+                        </div>
+                        <div class="flex-grow-1 overflow-hidden">
+                            <div class="text-truncate fw-semibold" style="font-size:.88rem;" x-text="pl.title"></div>
+                            <div class="text-secondary" style="font-size:.75rem;" x-text="pl.songs.length + ' songs'"></div>
+                        </div>
+                        <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                            <button
+                                class="btn btn-sm sp-spm-go-btn rounded-pill px-3"
+                                title="Go to playlist"
+                                @click="showSongPlaylistsModal = false; goTo('playlist', { playlistId: pl.id })"
+                            >
+                                <i class="bi bi-arrow-right me-1"></i>Go
+                            </button>
+                            <button
+                                class="sp-icon-btn sp-spm-remove-btn"
+                                title="Remove from this playlist"
+                                @click="toggleSongInPlaylist(pl.id, songPlaylistsModalSongId)"
+                            >
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+
+                <div x-show="songPlaylistsModalPlaylists.length === 0" class="text-center py-4">
+                    <i class="bi bi-collection text-secondary" style="font-size:2rem;"></i>
+                    <p class="text-secondary small mt-2 mb-0">Not in any playlist.</p>
+                </div>
+            </div>
+
+            <div class="px-4 pb-4 pt-2">
+                <button class="sp-modal-btn sp-modal-btn-save w-100" @click="showSongPlaylistsModal = false">Close</button>
+            </div>
+        </div>
     </div>
 
     {{-- ── ADD TO PLAYLIST MODAL ── --}}
@@ -625,13 +1250,13 @@
         x-show="showAddToPlaylistModal"
         x-transition.opacity
         class="sp-modal-backdrop"
-        @click.self="showAddToPlaylistModal = false"
-        @keydown.escape.window="showAddToPlaylistModal = false"
+        @click.self="showAddToPlaylistModal = false; pendingPlaylistIds = []"
+        @keydown.escape.window="showAddToPlaylistModal = false; pendingPlaylistIds = []"
     >
         <div class="sp-modal-box rounded-3 p-4 shadow-lg" style="width:360px;">
             <div class="d-flex align-items-center justify-content-between mb-3">
                 <h3 class="fw-bold mb-0" style="font-size:1.1rem;">Add to Playlist</h3>
-                <button @click="showAddToPlaylistModal = false" class="sp-icon-btn" style="color:var(--sp-muted);font-size:1.1rem;" title="Close">
+                <button @click="showAddToPlaylistModal = false; pendingPlaylistIds = []" class="sp-icon-btn" style="color:var(--sp-muted);font-size:1.1rem;" title="Close">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
@@ -640,8 +1265,8 @@
                 <template x-for="playlist in playlists" :key="playlist.id">
                     <div
                         class="sp-playlist-select-item rounded-2 d-flex align-items-center gap-3 px-3 py-2"
-                        :class="playlist.songs.includes(addToPlaylistSongId) ? 'sp-playlist-select-item-active' : ''"
-                        @click="toggleSongInPlaylist(playlist.id, addToPlaylistSongId)"
+                        :class="pendingPlaylistIds.includes(playlist.id) ? 'sp-playlist-select-item-active' : ''"
+                        @click="togglePendingPlaylist(playlist.id)"
                     >
                         <div class="d-flex align-items-center justify-content-center rounded-2 flex-shrink-0" style="width:36px;height:36px;background:#333;">
                             <i class="bi bi-music-note-list text-secondary" style="font-size:.85rem;"></i>
@@ -651,8 +1276,8 @@
                             <div x-text="playlist.songs.length + ' songs'" class="text-secondary" style="font-size:.75rem;"></div>
                         </div>
                         <i class="bi flex-shrink-0"
-                           :class="playlist.songs.includes(addToPlaylistSongId) ? 'bi-check-circle-fill' : 'bi-circle'"
-                           :style="playlist.songs.includes(addToPlaylistSongId) ? 'color:var(--sp-green)' : 'color:var(--sp-muted)'"></i>
+                           :class="pendingPlaylistIds.includes(playlist.id) ? 'bi-check-circle-fill' : 'bi-circle'"
+                           :style="pendingPlaylistIds.includes(playlist.id) ? 'color:var(--sp-green)' : 'color:var(--sp-muted)'"></i>
                     </div>
                 </template>
             </div>
@@ -661,7 +1286,7 @@
                 <button class="sp-pill-btn" @click="showAddToPlaylistModal = false; openCreatePlaylist()">
                     <i class="bi bi-plus-lg"></i> New Playlist
                 </button>
-                <button class="sp-modal-btn sp-modal-btn-save" @click="showAddToPlaylistModal = false">Done</button>
+                <button class="sp-modal-btn sp-modal-btn-save" @click="confirmAddToPlaylist()">Done</button>
             </div>
         </div>
     </div>
@@ -698,6 +1323,26 @@
 
     /* ── Cards ── */
     .sp-card { background: var(--sp-card); }
+
+    /* ── Back / Forward history buttons ── */
+    .sp-nav-history { position: sticky; top: 0; z-index: 10; background: var(--sp-card); }
+    .sp-hist-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: rgba(0,0,0,.55);
+        border: none;
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: .8rem;
+        transition: background .15s;
+        flex-shrink: 0;
+    }
+    .sp-hist-btn:hover:not(:disabled) { background: rgba(255,255,255,.18); }
+    .sp-hist-btn:disabled { opacity: 0.35; cursor: default; }
 
     /* ── Nav links ── */
     .sp-nav-link {
@@ -741,6 +1386,26 @@
     .sp-header-green  { background: linear-gradient(180deg,#1a6535 0%,var(--sp-card) 100%); }
     .sp-header-purple { background: linear-gradient(180deg,#450af5 0%,var(--sp-card) 100%); }
     .sp-header-dark   { background: linear-gradient(180deg,#3d3d3d 0%,var(--sp-card) 100%); }
+
+    /* ── Play all button ── */
+    .sp-play-all-btn {
+        width: 56px; height: 56px;
+        border-radius: 50%;
+        background: var(--sp-green);
+        border: none; color: #000; font-size: 1.5rem;
+        display: inline-flex; align-items: center; justify-content: center;
+        box-shadow: 0 8px 24px rgba(0,0,0,.5);
+        cursor: pointer;
+        transition: background .15s, transform .15s, box-shadow .15s;
+        flex-shrink: 0;
+    }
+    .sp-play-all-btn:hover {
+        background: var(--sp-green-hover);
+        transform: scale(1.06);
+        box-shadow: 0 12px 32px rgba(0,0,0,.6);
+    }
+    .sp-play-all-btn:active { transform: scale(.97); }
+    .sp-play-all-btn-sm { width: 38px; height: 38px; font-size: 1rem; }
 
     /* ── Song grid ── */
     .sp-song-grid {
@@ -846,6 +1511,8 @@
     .sp-ctx-item i { width: 16px; text-align: center; font-size: .9rem; flex-shrink: 0; }
     .sp-ctx-item-danger { color: #e55; }
     .sp-ctx-item-danger:hover { background: rgba(220,50,50,.12); }
+    .sp-ctx-item-disabled { opacity: .35; cursor: not-allowed !important; }
+    .sp-ctx-item-disabled:hover { background: none !important; }
     .sp-ctx-divider { height: 1px; background: rgba(255,255,255,.1); margin: 4px 0; }
 
     /* ── Queue items ── */
@@ -855,16 +1522,37 @@
         background: var(--sp-hover);
         display: flex; align-items: center; justify-content: center;
         overflow: hidden;
+        transition: opacity .15s;
     }
+    .sp-queue-art:hover { opacity: .85; }
+    .sp-queue-art-play {
+        position: absolute; inset: 0;
+        background: rgba(0,0,0,.5);
+        border-radius: inherit;
+        display: flex; align-items: center; justify-content: center;
+        opacity: 0; transition: opacity .15s;
+    }
+    .sp-queue-art:hover .sp-queue-art-play { opacity: 1; }
+
     .sp-queue-item {
-        cursor: pointer;
         transition: background .15s;
-        border-radius: 6px;
-        margin: 0 6px;
+        user-select: none;
     }
     .sp-queue-item:hover { background: var(--sp-hover); }
-    .sp-queue-remove-btn { opacity: 0; transition: opacity .15s; }
-    .sp-queue-item:hover .sp-queue-remove-btn { opacity: 1; }
+
+    .sp-queue-drag-handle {
+        color: var(--sp-muted);
+        font-size: .85rem;
+        opacity: 0;
+        transition: opacity .15s;
+        cursor: grab;
+        padding: 2px;
+    }
+    .sp-queue-item:hover .sp-queue-drag-handle { opacity: 1; }
+    .sp-queue-drag-over {
+        background: rgba(29,185,84,.08) !important;
+        outline: 1px dashed rgba(29,185,84,.35);
+    }
 
     /* ── Bottom bar art ── */
     .sp-bar-art { width: 52px; height: 52px; flex-shrink: 0; }
@@ -935,6 +1623,37 @@
     .sp-playlist-select-item:hover { background: var(--sp-hover); }
     .sp-playlist-select-item-active { background: rgba(29,185,84,.1); }
 
+    /* ── Song Playlists modal ── */
+    .sp-spm-art {
+        width: 48px; height: 48px;
+        background: var(--sp-hover);
+        overflow: hidden;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .sp-spm-row {
+        cursor: default;
+        transition: background .15s;
+    }
+    .sp-spm-row:hover { background: var(--sp-hover); }
+    .sp-spm-go-btn {
+        background: rgba(255,255,255,.1);
+        border: none;
+        color: var(--sp-text);
+        font-size: .8rem;
+        font-weight: 600;
+        transition: background .15s;
+    }
+    .sp-spm-go-btn:hover { background: rgba(255,255,255,.2); color: var(--sp-text); }
+    .sp-spm-remove-btn {
+        color: #e55;
+        font-size: .85rem;
+    }
+    .sp-spm-remove-btn:hover { color: #ff6666; }
+
+    /* ── Context menu playlist-info item ── */
+    .sp-ctx-item-playlist-info { color: var(--sp-text); }
+    .sp-ctx-item-playlist-info:hover { background: rgba(29,185,84,.1); }
+
     /* ── View toggle ── */
     .sp-view-toggle {
         display: flex;
@@ -995,4 +1714,56 @@
     .sp-list-actions .sp-list-action-btn { opacity: 0; transition: opacity .15s; }
     .sp-list-row:hover .sp-list-actions .sp-list-action-btn { opacity: 1; }
     .sp-list-actions .sp-icon-btn-active { opacity: 1 !important; }
+
+    /* ── Search header gradient ── */
+    .sp-header-teal { background: linear-gradient(180deg,#0d6e6e 0%,var(--sp-card) 100%); }
+
+    /* ── Search filter bar ── */
+    .sp-filter-input,
+    .sp-filter-select {
+        background: #2a2a2a;
+        border: 1px solid rgba(255,255,255,.15);
+        color: var(--sp-text);
+        font-size: .88rem;
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .sp-filter-input:focus,
+    .sp-filter-select:focus {
+        background: #2a2a2a;
+        border-color: var(--sp-green);
+        box-shadow: 0 0 0 2px rgba(29,185,84,.25);
+        color: var(--sp-text);
+        outline: none;
+    }
+    .sp-filter-input::placeholder { color: var(--sp-muted); }
+    .sp-filter-select option { background: #2a2a2a; color: var(--sp-text); }
+
+    .sp-filter-addon {
+        background: #2a2a2a;
+        border: 1px solid rgba(255,255,255,.15);
+        border-right: none;
+        color: var(--sp-muted);
+        font-size: .9rem;
+    }
+    .sp-filter-clear-btn {
+        background: #2a2a2a;
+        border: 1px solid rgba(255,255,255,.15);
+        border-left: none;
+        color: var(--sp-muted);
+        cursor: pointer;
+        transition: color .15s;
+    }
+    .sp-filter-clear-btn:hover { color: var(--sp-text); }
+
+    /* Keep Bootstrap select arrow visible on dark bg */
+    .sp-filter-select {
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23adb5bd' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+        background-repeat: no-repeat;
+        background-position: right .75rem center;
+        background-size: 16px 12px;
+        padding-right: 2.5rem;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+    }
 </style>

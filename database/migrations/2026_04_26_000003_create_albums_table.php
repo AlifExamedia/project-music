@@ -8,23 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('songs', function (Blueprint $table) {
+        Schema::create('albums', function (Blueprint $table) {
             $table->id();
-            $table->string('filename')->unique();
-            $table->string('title');
+            $table->string('name');
             $table->foreignId('artist_id')->nullable()->constrained('artists')->nullOnDelete();
-            $table->foreignId('album_id')->nullable()->constrained('albums')->nullOnDelete();
-            $table->foreignId('genre_id')->nullable()->constrained('genres')->nullOnDelete();
             $table->string('year', 10)->nullable();
-            $table->string('track', 20)->nullable();
-            $table->string('duration', 10)->nullable();
             $table->string('cover_art_path')->nullable();
             $table->timestamps();
+            $table->unique(['name', 'artist_id']);
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('songs');
+        Schema::dropIfExists('albums');
     }
 };

@@ -1,5 +1,5 @@
 document.addEventListener('alpine:init', () => {
-    Alpine.data('musicPlayer', (songs, favourites, playlists, session) => ({
+    Alpine.data('musicPlayer', (songs, favourites, playlists, session, historyIds) => ({
         // Playback state
         songs,
         currentSongId: null,
@@ -17,26 +17,45 @@ document.addEventListener('alpine:init', () => {
         // DB-backed state (synced via Livewire)
         favourites,
         playlists,
+        history: historyIds ?? [],
 
         // UI state
-        currentView: 'all', // 'all' | 'favourites' | 'playlist'
+        currentView: 'all', // 'all' | 'favourites' | 'playlist' | 'albums' | 'artists' | 'album' | 'artist' | 'search' | 'history'
         selectedPlaylistId: null,
+        selectedAlbum: null,
+        selectedArtist: null,
         showPlaylistModal: false,
         playlistForm: { id: null, title: '', description: '' },
         showAddToPlaylistModal: false,
         addToPlaylistSongId: null,
+        pendingPlaylistIds: [],
+        showSongPlaylistsModal: false,
+        songPlaylistsModalSongId: null,
         leftSidebarOpen: true,
         rightSidebarOpen: false,
         viewMode: 'grid', // 'grid' | 'list'
+
+        // Search state
+        searchQuery: '',
+        searchBy: 'all', // 'all' | 'name' | 'artist' | 'album'
+        filterYear: '',
+        filterGenre: '',
 
         // Queue
         queue: [], // array of song IDs (up next)
 
         // Selection & context menu
         selectedSongId: null,
-        contextMenu: { show: false, songId: null, x: 0, y: 0 },
+        contextMenu: { show: false, songId: null, x: 0, y: 0, fromQueue: false, queueIndex: null },
         _longPressTimer: null,
         _longPressTriggered: false,
+
+        // Navigation history (back / forward)
+        navHistory: [],
+        navFuture: [],
+
+        // Queue drag-to-reorder
+        _queueDragIndex: null,
 
         // DB sync internals
         _lastDbSave: 0,
@@ -50,6 +69,19 @@ document.addEventListener('alpine:init', () => {
             return this.songs.find(s => s.id === this.currentSongId) ?? null;
         },
 
+        get contextMenuSong() {
+            return this.songs.find(s => s.id === this.contextMenu.songId) ?? null;
+        },
+
+        get songPlaylistsModalSong() {
+            return this.songs.find(s => s.id === this.songPlaylistsModalSongId) ?? null;
+        },
+
+        get songPlaylistsModalPlaylists() {
+            if (!this.songPlaylistsModalSongId) return [];
+            return this.playlists.filter(p => p.songs.includes(this.songPlaylistsModalSongId));
+        },
+
         get filteredSongs() {
             if (this.currentView === 'favourites') {
                 return this.songs.filter(s => this.favourites.includes(s.id));
@@ -61,11 +93,91 @@ document.addEventListener('alpine:init', () => {
                     .map(id => this.songs.find(s => s.id === id))
                     .filter(Boolean);
             }
+            if (this.currentView === 'album') {
+                return this.songs.filter(s => s.album === this.selectedAlbum);
+            }
+            if (this.currentView === 'artist') {
+                const name = this.selectedArtist;
+                return this.songs.filter(s => (s.artist ?? 'Unknown Artist') === name);
+            }
+            if (this.currentView === 'history') {
+                return this.history
+                    .map(id => this.songs.find(s => s.id === id))
+                    .filter(Boolean);
+            }
+            if (this.currentView === 'albums' || this.currentView === 'artists') {
+                return [];
+            }
+            if (this.currentView === 'search') {
+                let results = this.songs;
+                const q = this.searchQuery.trim().toLowerCase();
+                if (q) {
+                    results = results.filter(s => {
+                        if (this.searchBy === 'name')   return s.title?.toLowerCase().includes(q);
+                        if (this.searchBy === 'artist') return s.artist?.toLowerCase().includes(q);
+                        if (this.searchBy === 'album')  return s.album?.toLowerCase().includes(q);
+                        return (
+                            s.title?.toLowerCase().includes(q) ||
+                            s.artist?.toLowerCase().includes(q) ||
+                            s.album?.toLowerCase().includes(q)
+                        );
+                    });
+                }
+                if (this.filterYear) {
+                    results = results.filter(s => String(s.year) === String(this.filterYear));
+                }
+                if (this.filterGenre) {
+                    results = results.filter(s => s.genre === this.filterGenre);
+                }
+                return results;
+            }
             return this.songs;
         },
 
         get selectedPlaylist() {
             return this.playlists.find(p => p.id === this.selectedPlaylistId) ?? null;
+        },
+
+        get yearList() {
+            return [...new Set(this.songs.map(s => s.year).filter(Boolean))]
+                .sort((a, b) => b - a);
+        },
+
+        get genreList() {
+            return [...new Set(this.songs.map(s => s.genre).filter(Boolean))].sort();
+        },
+
+        get albumList() {
+            const map = {};
+            this.songs.forEach(s => {
+                if (!s.album) return;
+                if (!map[s.album]) {
+                    map[s.album] = { name: s.album, artist: s.artist, artwork_url: null, count: 0 };
+                }
+                map[s.album].count++;
+                if (!map[s.album].artwork_url && s.artwork_url) {
+                    map[s.album].artwork_url = s.artwork_url;
+                }
+            });
+            return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+        },
+
+        get canGoBack() { return this.navHistory.length > 0; },
+        get canGoForward() { return this.navFuture.length > 0; },
+
+        get artistList() {
+            const map = {};
+            this.songs.forEach(s => {
+                const name = s.artist ?? 'Unknown Artist';
+                if (!map[name]) {
+                    map[name] = { name, artwork_url: null, count: 0 };
+                }
+                map[name].count++;
+                if (!map[name].artwork_url && s.artwork_url) {
+                    map[name].artwork_url = s.artwork_url;
+                }
+            });
+            return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
         },
 
         isFavourite(songId) {
@@ -78,6 +190,60 @@ document.addEventListener('alpine:init', () => {
 
         songPlaylists(songId) {
             return this.playlists.filter(p => p.songs.includes(songId));
+        },
+
+        _navSnapshot() {
+            return {
+                view: this.currentView,
+                selectedAlbum: this.selectedAlbum,
+                selectedArtist: this.selectedArtist,
+                selectedPlaylistId: this.selectedPlaylistId,
+                scrollTop: this.$refs.mainContent?.scrollTop ?? 0,
+            };
+        },
+
+        _applyNavSnapshot(snap) {
+            this.currentView = snap.view;
+            this.selectedAlbum = snap.selectedAlbum;
+            this.selectedArtist = snap.selectedArtist;
+            this.selectedPlaylistId = snap.selectedPlaylistId;
+            this._saveState();
+            this.$nextTick(() => {
+                if (this.$refs.mainContent) this.$refs.mainContent.scrollTop = snap.scrollTop;
+            });
+        },
+
+        goTo(view, opts = {}) {
+            this.navHistory.push(this._navSnapshot());
+            this.navFuture = [];
+            this.currentView = view;
+            this.selectedAlbum = opts.album ?? null;
+            this.selectedArtist = opts.artist ?? null;
+            this.selectedPlaylistId = opts.playlistId ?? null;
+            this._saveState();
+            this.$nextTick(() => {
+                if (this.$refs.mainContent) this.$refs.mainContent.scrollTop = 0;
+            });
+        },
+
+        navBack() {
+            if (!this.navHistory.length) return;
+            this.navFuture.push(this._navSnapshot());
+            this._applyNavSnapshot(this.navHistory.pop());
+        },
+
+        navForward() {
+            if (!this.navFuture.length) return;
+            this.navHistory.push(this._navSnapshot());
+            this._applyNavSnapshot(this.navFuture.pop());
+        },
+
+        viewAlbum(albumName) {
+            this.goTo('album', { album: albumName });
+        },
+
+        viewArtist(artistName) {
+            this.goTo('artist', { artist: artistName });
         },
 
         init() {
@@ -98,6 +264,12 @@ document.addEventListener('alpine:init', () => {
             if (src.view_mode !== undefined)          this.viewMode          = src.view_mode;
             if (src.viewMode !== undefined)           this.viewMode          = src.viewMode;
             if (Array.isArray(src.queue) && src.queue.length) this.queue    = src.queue;
+
+            // Restore view state from localStorage only (not DB session)
+            if (local.currentView !== undefined)       this.currentView       = local.currentView;
+            if (local.selectedAlbum !== undefined)     this.selectedAlbum     = local.selectedAlbum;
+            if (local.selectedArtist !== undefined)    this.selectedArtist    = local.selectedArtist;
+            if (local.selectedPlaylistId !== undefined) this.selectedPlaylistId = local.selectedPlaylistId;
 
             this.audio.volume = this.volume;
             this.audio.muted  = this.muted;
@@ -160,6 +332,8 @@ document.addEventListener('alpine:init', () => {
             if (autoplay) {
                 this.audio.play();
                 this.playing = true;
+                this.history = [songId, ...this.history.filter(id => id !== songId)].slice(0, 100);
+                this.$wire.addToHistory(songId);
             } else {
                 this.playing = false;
             }
@@ -199,7 +373,7 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
 
-            const songs = this.filteredSongs;
+            const songs = this.filteredSongs.length ? this.filteredSongs : this.songs;
             if (!songs.length) return;
 
             let nextId;
@@ -220,7 +394,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         prev() {
-            const songs = this.filteredSongs;
+            const songs = this.filteredSongs.length ? this.filteredSongs : this.songs;
             if (!songs.length) return;
             if (this.audio.currentTime > 3) {
                 this.audio.currentTime = 0;
@@ -233,7 +407,7 @@ document.addEventListener('alpine:init', () => {
 
         toggleShuffle() {
             this.shuffle = !this.shuffle;
-            if (this.shuffle) this.buildShuffleQueue(this.filteredSongs);
+            if (this.shuffle) this.buildShuffleQueue(this.filteredSongs.length ? this.filteredSongs : this.songs);
             this._saveState();
             this._syncToDb();
         },
@@ -347,7 +521,42 @@ document.addEventListener('alpine:init', () => {
 
         openAddToPlaylist(songId) {
             this.addToPlaylistSongId = songId;
+            this.pendingPlaylistIds = this.playlists
+                .filter(p => p.songs.includes(songId))
+                .map(p => p.id);
             this.showAddToPlaylistModal = true;
+        },
+
+        togglePendingPlaylist(playlistId) {
+            if (this.pendingPlaylistIds.includes(playlistId)) {
+                this.pendingPlaylistIds = this.pendingPlaylistIds.filter(id => id !== playlistId);
+            } else {
+                this.pendingPlaylistIds.push(playlistId);
+            }
+        },
+
+        async confirmAddToPlaylist() {
+            const songId = this.addToPlaylistSongId;
+            const originalIds = this.playlists.filter(p => p.songs.includes(songId)).map(p => p.id);
+
+            for (const pl of this.playlists) {
+                const wasIn = originalIds.includes(pl.id);
+                const nowIn = this.pendingPlaylistIds.includes(pl.id);
+                if (!wasIn && nowIn) {
+                    await this.$wire.addToPlaylist(pl.id, songId);
+                    pl.songs.push(songId);
+                } else if (wasIn && !nowIn) {
+                    await this.$wire.removeFromPlaylist(pl.id, songId);
+                    pl.songs = pl.songs.filter(id => id !== songId);
+                }
+            }
+
+            this.showAddToPlaylistModal = false;
+        },
+
+        openSongPlaylists(songId) {
+            this.songPlaylistsModalSongId = songId;
+            this.showSongPlaylistsModal = true;
         },
 
         async toggleSongInPlaylist(playlistId, songId) {
@@ -371,10 +580,25 @@ document.addEventListener('alpine:init', () => {
 
         openContextMenu(event, songId) {
             this.selectedSongId = songId;
-            const menuW = 230, menuH = 220;
+            const menuW = 230, menuH = 260;
             this.contextMenu = {
                 show: true,
                 songId,
+                fromQueue: false,
+                queueIndex: null,
+                x: Math.min(event.clientX, window.innerWidth - menuW - 8),
+                y: Math.min(event.clientY, window.innerHeight - menuH - 8),
+            };
+        },
+
+        openQueueContextMenu(event, songId, index) {
+            this.selectedSongId = songId;
+            const menuW = 230, menuH = 430;
+            this.contextMenu = {
+                show: true,
+                songId,
+                fromQueue: true,
+                queueIndex: index,
                 x: Math.min(event.clientX, window.innerWidth - menuW - 8),
                 y: Math.min(event.clientY, window.innerHeight - menuH - 8),
             };
@@ -396,9 +620,88 @@ document.addEventListener('alpine:init', () => {
             }, 500);
         },
 
+        startQueueLongPress(event, songId, index) {
+            if (event.button !== undefined && event.button !== 0) return;
+            const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+            const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+            this._longPressTriggered = false;
+            clearTimeout(this._longPressTimer);
+            this._longPressTimer = setTimeout(() => {
+                this._longPressTriggered = true;
+                this.openQueueContextMenu({ clientX, clientY }, songId, index);
+            }, 500);
+        },
+
         cancelLongPress() {
             clearTimeout(this._longPressTimer);
             this._longPressTimer = null;
+        },
+
+        // ── Queue reordering ─────────────────────────────────────────────
+        moveQueueItem(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= this.queue.length) return;
+            const q = [...this.queue];
+            [q[index], q[newIndex]] = [q[newIndex], q[index]];
+            this.queue = q;
+            this._syncToDbDebounced(500);
+        },
+
+        moveQueueItemToTop(index) {
+            if (index === 0) return;
+            const q = [...this.queue];
+            const [item] = q.splice(index, 1);
+            q.unshift(item);
+            this.queue = q;
+            this._syncToDbDebounced(500);
+        },
+
+        moveQueueItemToBottom(index) {
+            if (index === this.queue.length - 1) return;
+            const q = [...this.queue];
+            const [item] = q.splice(index, 1);
+            q.push(item);
+            this.queue = q;
+            this._syncToDbDebounced(500);
+        },
+
+        // ── Queue drag-to-reorder ────────────────────────────────────────
+        _clearQueueDragOver(el) {
+            el.closest('.sp-queue-inner')
+              ?.querySelectorAll('.sp-queue-item')
+              .forEach(e => e.classList.remove('sp-queue-drag-over'));
+        },
+
+        queueDragStart(event, index) {
+            this._queueDragIndex = index;
+            event.dataTransfer.effectAllowed = 'move';
+        },
+
+        queueDragOver(event, el, index) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            this._clearQueueDragOver(el);
+            el.classList.add('sp-queue-drag-over');
+        },
+
+        queueDrop(event, el, index) {
+            event.preventDefault();
+            this._clearQueueDragOver(el);
+            if (this._queueDragIndex === null || this._queueDragIndex === index) {
+                this._queueDragIndex = null;
+                return;
+            }
+            const q = [...this.queue];
+            const [item] = q.splice(this._queueDragIndex, 1);
+            q.splice(index, 0, item);
+            this.queue = q;
+            this._queueDragIndex = null;
+            this._syncToDbDebounced(500);
+        },
+
+        queueDragEnd(el) {
+            this._clearQueueDragOver(el);
+            this._queueDragIndex = null;
         },
 
         // ── Queue ────────────────────────────────────────────────────────
@@ -417,11 +720,24 @@ document.addEventListener('alpine:init', () => {
             this._syncToDb();
         },
 
+        async clearHistory() {
+            this.history = [];
+            await this.$wire.clearHistory();
+        },
+
+        playAll(songIds) {
+            if (!songIds || !songIds.length) return;
+            this.queue = [];
+            const [first, ...rest] = songIds;
+            this.queue = rest;
+            this.loadSong(first);
+            this._syncToDbDebounced(500);
+        },
+
         playFromQueue(index) {
             const songId = this.queue[index];
             this.queue.splice(0, index + 1);
             this.loadSong(songId);
-            // loadSong already triggers _syncToDbDebounced
         },
 
         // ── State persistence ────────────────────────────────────────────
@@ -438,6 +754,10 @@ document.addEventListener('alpine:init', () => {
                     rightSidebarOpen: this.rightSidebarOpen,
                     viewMode: this.viewMode,
                     queue: this.queue,
+                    currentView: this.currentView,
+                    selectedAlbum: this.selectedAlbum,
+                    selectedArtist: this.selectedArtist,
+                    selectedPlaylistId: this.selectedPlaylistId,
                 }));
             } catch (_) {}
         },

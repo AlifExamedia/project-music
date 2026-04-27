@@ -6,6 +6,9 @@ use Livewire\Component;
 use Livewire\WithFileUploads;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Song;
+use App\Models\Artist;
+use App\Models\Album;
+use App\Models\Genre;
 
 class UploadMusic extends Component
 {
@@ -36,7 +39,18 @@ class UploadMusic extends Component
 
     public function loadExistingSongs(): void
     {
-        $this->existingSongs = Song::orderBy('title')->get(['id', 'filename', 'title', 'artist', 'cover_art_path'])->toArray();
+        $this->existingSongs = Song::with('artist')
+            ->orderBy('title')
+            ->get()
+            ->map(fn($s) => [
+                'id'            => $s->id,
+                'filename'      => $s->filename,
+                'title'         => $s->title,
+                'artist'        => $s->artist?->name,
+                'cover_art_path' => $s->cover_art_path,
+            ])
+            ->toArray();
+
         $this->totalFiles = count(array_filter(
             Storage::disk('music')->files(),
             fn($f) => str_ends_with($f, '.mp3')
@@ -95,15 +109,23 @@ class UploadMusic extends Component
 
         $coverPath = $this->extractOrStoreCover($filename);
 
+        [$artistId, $albumId, $genreId] = $this->resolveRelations(
+            trim($this->artist),
+            trim($this->album),
+            trim($this->genre),
+            trim($this->year),
+            $coverPath
+        );
+
         Song::create([
-            'filename'      => $filename,
-            'title'         => trim($this->title),
-            'artist'        => trim($this->artist) ?: null,
-            'album'         => trim($this->album) ?: null,
-            'genre'         => trim($this->genre) ?: null,
-            'year'          => trim($this->year) ?: null,
-            'track'         => trim($this->track) ?: null,
-            'duration'      => $this->duration,
+            'filename'       => $filename,
+            'title'          => trim($this->title),
+            'artist_id'      => $artistId,
+            'album_id'       => $albumId,
+            'genre_id'       => $genreId,
+            'year'           => trim($this->year) ?: null,
+            'track'          => trim($this->track) ?: null,
+            'duration'       => $this->duration,
             'cover_art_path' => $coverPath,
         ]);
 
@@ -140,17 +162,30 @@ class UploadMusic extends Component
                 $coverPath = $coverFilename;
             }
 
+            $artistName = $comments['artist'][0] ?? null;
+            $albumName  = $comments['album'][0]  ?? null;
+            $genreName  = $comments['genre'][0]  ?? null;
+            $year       = $comments['year'][0]   ?? null;
+
+            [$artistId, $albumId, $genreId] = $this->resolveRelations(
+                $artistName ?? '',
+                $albumName  ?? '',
+                $genreName  ?? '',
+                $year       ?? '',
+                $coverPath
+            );
+
             Song::create([
                 'filename'       => $filename,
-                'title'          => $comments['title'][0]        ?? pathinfo($filename, PATHINFO_FILENAME),
-                'artist'         => $comments['artist'][0]       ?? null,
-                'album'          => $comments['album'][0]        ?? null,
-                'genre'          => $comments['genre'][0]        ?? null,
-                'year'           => $comments['year'][0]         ?? null,
+                'title'          => $comments['title'][0] ?? pathinfo($filename, PATHINFO_FILENAME),
+                'artist_id'      => $artistId,
+                'album_id'       => $albumId,
+                'genre_id'       => $genreId,
+                'year'           => $year,
                 'track'          => $comments['track_number'][0] ?? null,
                 'duration'       => isset($tags['playtime_seconds'])
-                                       ? gmdate('i:s', (int) $tags['playtime_seconds'])
-                                       : null,
+                                        ? gmdate('i:s', (int) $tags['playtime_seconds'])
+                                        : null,
                 'cover_art_path' => $coverPath,
             ]);
 
@@ -176,6 +211,40 @@ class UploadMusic extends Component
 
         $this->successMessage = 'Song removed from library.';
         $this->loadExistingSongs();
+    }
+
+    private function resolveRelations(
+        string $artistName,
+        string $albumName,
+        string $genreName,
+        string $year,
+        ?string $coverPath
+    ): array {
+        $artistId = null;
+        if ($artistName !== '') {
+            $artist   = Artist::firstOrCreate(['name' => $artistName]);
+            $artistId = $artist->id;
+        }
+
+        $genreId = null;
+        if ($genreName !== '') {
+            $genre   = Genre::firstOrCreate(['name' => $genreName]);
+            $genreId = $genre->id;
+        }
+
+        $albumId = null;
+        if ($albumName !== '') {
+            $album = Album::firstOrCreate(
+                ['name' => $albumName, 'artist_id' => $artistId],
+                [
+                    'year'          => $year ?: null,
+                    'cover_art_path' => $coverPath,
+                ]
+            );
+            $albumId = $album->id;
+        }
+
+        return [$artistId, $albumId, $genreId];
     }
 
     private function extractOrStoreCover(string $filename): ?string
