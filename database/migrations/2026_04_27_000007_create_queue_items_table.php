@@ -8,18 +8,17 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('playlist_songs', function (Blueprint $table) {
+        Schema::create('queue_items', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('playlist_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->integer('position');
             $table->foreignId('song_id')->constrained('songs')->cascadeOnDelete();
-            $table->unsignedInteger('position')->default(0);
             $table->timestamps();
-            $table->unique(['playlist_id', 'song_id']);
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('playlist_songs');
+        Schema::dropIfExists('queue_items');
     }
 };

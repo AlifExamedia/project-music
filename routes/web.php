@@ -3,11 +3,13 @@
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use App\Livewire\MusicPlayer;
+use App\Livewire\UploadMusic;
 
 Route::view('/', 'welcome')->name('home');
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/player', MusicPlayer::class)->name('player');
+    Route::get('/upload', UploadMusic::class)->name('music.upload');
 
     Route::get('/audio/{filename}', function (string $filename) {
         abort_unless(str_ends_with($filename, '.mp3'), 403);
@@ -19,21 +21,22 @@ Route::middleware(['auth'])->group(function () {
         );
     })->where('filename', '.+\.mp3')->name('audio.stream');
 
-    Route::get('/audio/{filename}/artwork', function (string $filename) {
-        abort_unless(str_ends_with($filename, '.mp3'), 403);
-        abort_unless(Storage::disk('music')->exists($filename), 404);
+    Route::get('/audio/cover/{filename}', function (string $filename) {
+        $filename = basename($filename);
+        $path     = storage_path('app/music/cover/' . $filename);
 
-        $path = storage_path('app/music/' . $filename);
-        $id3 = new \getID3();
-        $tags = $id3->analyze($path);
+        abort_unless(file_exists($path), 404);
 
-        $art = $tags['id3v2']['APIC'][0]['data'] ?? null;
-        $mime = $tags['id3v2']['APIC'][0]['image_mime'] ?? 'image/jpeg';
+        $ext  = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        $mime = match ($ext) {
+            'png'  => 'image/png',
+            'gif'  => 'image/gif',
+            'webp' => 'image/webp',
+            default => 'image/jpeg',
+        };
 
-        abort_unless($art, 404);
-
-        return response($art)->header('Content-Type', $mime);
-    })->where('filename', '.+\.mp3')->name('audio.artwork');
+        return response()->file($path, ['Content-Type' => $mime, 'Cache-Control' => 'public, max-age=31536000']);
+    })->where('filename', '[^/]+')->name('audio.cover');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

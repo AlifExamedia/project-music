@@ -5,14 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class PlaylistSong extends Model
+class QueueItem extends Model
 {
-    protected $fillable = ['playlist_id', 'song_id', 'position'];
-
-    public function playlist(): BelongsTo
-    {
-        return $this->belongsTo(Playlist::class);
-    }
+    protected $fillable = [
+        'user_id',
+        'position',
+        'song_id',
+    ];
 
     public function song(): BelongsTo
     {

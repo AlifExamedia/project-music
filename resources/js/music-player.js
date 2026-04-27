@@ -1,8 +1,8 @@
 document.addEventListener('alpine:init', () => {
-    Alpine.data('musicPlayer', (songs, favourites, playlists) => ({
+    Alpine.data('musicPlayer', (songs, favourites, playlists, session) => ({
         // Playback state
         songs,
-        currentFilename: null,
+        currentSongId: null,
         playing: false,
         shuffle: false,
         loop: 'none', // 'none' | 'all' | 'one'
@@ -24,21 +24,41 @@ document.addEventListener('alpine:init', () => {
         showPlaylistModal: false,
         playlistForm: { id: null, title: '', description: '' },
         showAddToPlaylistModal: false,
-        addToPlaylistFilename: null,
+        addToPlaylistSongId: null,
+        leftSidebarOpen: true,
+        rightSidebarOpen: false,
+        viewMode: 'grid', // 'grid' | 'list'
+
+        // Queue
+        queue: [], // array of song IDs (up next)
+
+        // Selection & context menu
+        selectedSongId: null,
+        contextMenu: { show: false, songId: null, x: 0, y: 0 },
+        _longPressTimer: null,
+        _longPressTriggered: false,
+
+        // DB sync internals
+        _lastDbSave: 0,
+        _dbSaveTimer: null,
+
+        get queueSongs() {
+            return this.queue.map(id => this.songs.find(s => s.id === id)).filter(Boolean);
+        },
 
         get currentSong() {
-            return this.songs.find(s => s.filename === this.currentFilename) ?? null;
+            return this.songs.find(s => s.id === this.currentSongId) ?? null;
         },
 
         get filteredSongs() {
             if (this.currentView === 'favourites') {
-                return this.songs.filter(s => this.favourites.includes(s.filename));
+                return this.songs.filter(s => this.favourites.includes(s.id));
             }
             if (this.currentView === 'playlist' && this.selectedPlaylistId !== null) {
                 const pl = this.playlists.find(p => p.id === this.selectedPlaylistId);
                 if (!pl) return this.songs;
                 return pl.songs
-                    .map(f => this.songs.find(s => s.filename === f))
+                    .map(id => this.songs.find(s => s.id === id))
                     .filter(Boolean);
             }
             return this.songs;
@@ -48,38 +68,66 @@ document.addEventListener('alpine:init', () => {
             return this.playlists.find(p => p.id === this.selectedPlaylistId) ?? null;
         },
 
-        isFavourite(filename) {
-            return this.favourites.includes(filename);
+        isFavourite(songId) {
+            return this.favourites.includes(songId);
         },
 
-        isInSelectedPlaylist(filename) {
-            return this.selectedPlaylist?.songs.includes(filename) ?? false;
+        isInSelectedPlaylist(songId) {
+            return this.selectedPlaylist?.songs.includes(songId) ?? false;
+        },
+
+        songPlaylists(songId) {
+            return this.playlists.filter(p => p.songs.includes(songId));
         },
 
         init() {
             this.audio = new Audio();
 
-            const saved = this._loadState();
-            if (saved.volume !== undefined) this.volume = saved.volume;
-            if (saved.muted !== undefined) this.muted = saved.muted;
-            if (saved.shuffle !== undefined) this.shuffle = saved.shuffle;
-            if (saved.loop !== undefined) this.loop = saved.loop;
+            // DB session takes priority over localStorage
+            const local = this._loadState();
+            const src = (session && Object.keys(session).length > 0) ? session : local;
+
+            if (src.volume !== undefined)             this.volume            = src.volume;
+            if (src.muted !== undefined)              this.muted             = src.muted;
+            if (src.shuffle !== undefined)            this.shuffle           = src.shuffle;
+            if (src.loop !== undefined)               this.loop              = src.loop;
+            if (src.left_sidebar_open !== undefined)  this.leftSidebarOpen   = src.left_sidebar_open;
+            if (src.leftSidebarOpen !== undefined)    this.leftSidebarOpen   = src.leftSidebarOpen;
+            if (src.right_sidebar_open !== undefined) this.rightSidebarOpen  = src.right_sidebar_open;
+            if (src.rightSidebarOpen !== undefined)   this.rightSidebarOpen  = src.rightSidebarOpen;
+            if (src.view_mode !== undefined)          this.viewMode          = src.view_mode;
+            if (src.viewMode !== undefined)           this.viewMode          = src.viewMode;
+            if (Array.isArray(src.queue) && src.queue.length) this.queue    = src.queue;
 
             this.audio.volume = this.volume;
-            this.audio.muted = this.muted;
+            this.audio.muted  = this.muted;
 
             this.audio.addEventListener('timeupdate', () => {
                 this.currentTime = this.audio.currentTime;
                 this.progress = this.duration ? (this.currentTime / this.duration) * 100 : 0;
                 this._saveState();
+
+                // Sync to DB every 15 seconds during playback
+                const now = Date.now();
+                if (now - this._lastDbSave > 15000) {
+                    this._lastDbSave = now;
+                    this._syncToDb();
+                }
             });
 
             this.audio.addEventListener('loadedmetadata', () => {
                 this.duration = this.audio.duration;
-                if (saved.currentTime) {
-                    this.audio.currentTime = saved.currentTime;
-                    saved.currentTime = 0;
+                const dbTime    = src.current_time ?? src.currentTime ?? 0;
+                const localTime = local.currentTime ?? 0;
+                // localStorage is saved every ~250ms; DB only every 15s — prefer the larger value
+                const restoreTime = Math.max(dbTime, localTime);
+                if (restoreTime > 0) {
+                    this.audio.currentTime = restoreTime;
                 }
+                // zero out both so subsequent song loads start at 0:00
+                src.current_time = 0;
+                src.currentTime  = 0;
+                local.currentTime = 0;
             });
 
             this.audio.addEventListener('ended', () => {
@@ -91,17 +139,22 @@ document.addEventListener('alpine:init', () => {
                 }
             });
 
+            this.audio.addEventListener('pause', () => {
+                this._syncToDbDebounced(500);
+            });
+
             if (this.songs.length) {
-                const filename = saved.currentFilename;
-                const exists = filename && this.songs.find(s => s.filename === filename);
-                this.loadSong(exists ? filename : this.songs[0].filename, false);
+                const songId = src.current_song_id ?? src.currentSongId;
+                const exists = songId && this.songs.find(s => s.id === songId);
+                this.loadSong(exists ? songId : this.songs[0].id, false);
             }
         },
 
-        loadSong(filename, autoplay = true) {
-            const song = this.songs.find(s => s.filename === filename);
+        loadSong(songId, autoplay = true) {
+            const song = this.songs.find(s => s.id === songId);
             if (!song) return;
-            this.currentFilename = filename;
+            this.currentSongId = songId;
+            this.selectedSongId = songId;
             this.audio.src = song.url;
             this.audio.load();
             if (autoplay) {
@@ -110,17 +163,18 @@ document.addEventListener('alpine:init', () => {
             } else {
                 this.playing = false;
             }
+            this._syncToDbDebounced(800);
         },
 
-        play(filename) {
-            if (this.currentFilename === filename && this.playing) {
+        play(songId) {
+            if (this.currentSongId === songId && this.playing) {
                 this.audio.pause();
                 this.playing = false;
-            } else if (this.currentFilename === filename) {
+            } else if (this.currentSongId === songId) {
                 this.audio.play();
                 this.playing = true;
             } else {
-                this.loadSong(filename);
+                this.loadSong(songId);
             }
         },
 
@@ -130,8 +184,8 @@ document.addEventListener('alpine:init', () => {
                 this.audio.pause();
                 this.playing = false;
             } else {
-                if (!this.currentFilename && this.filteredSongs.length) {
-                    this.loadSong(this.filteredSongs[0].filename);
+                if (!this.currentSongId && this.filteredSongs.length) {
+                    this.loadSong(this.filteredSongs[0].id);
                 } else {
                     this.audio.play();
                     this.playing = true;
@@ -140,24 +194,29 @@ document.addEventListener('alpine:init', () => {
         },
 
         next() {
+            if (this.queue.length > 0) {
+                this.loadSong(this.queue.shift());
+                return;
+            }
+
             const songs = this.filteredSongs;
             if (!songs.length) return;
 
-            let nextFilename;
+            let nextId;
             if (this.shuffle) {
                 if (!this.shuffleQueue.length) this.buildShuffleQueue(songs);
-                nextFilename = this.shuffleQueue.pop();
+                nextId = this.shuffleQueue.pop();
             } else {
-                const idx = songs.findIndex(s => s.filename === this.currentFilename);
+                const idx = songs.findIndex(s => s.id === this.currentSongId);
                 const nextIdx = idx + 1;
                 if (nextIdx >= songs.length && this.loop === 'none') {
                     this.audio.pause();
                     this.playing = false;
                     return;
                 }
-                nextFilename = songs[nextIdx % songs.length].filename;
+                nextId = songs[nextIdx % songs.length].id;
             }
-            this.loadSong(nextFilename);
+            this.loadSong(nextId);
         },
 
         prev() {
@@ -167,15 +226,16 @@ document.addEventListener('alpine:init', () => {
                 this.audio.currentTime = 0;
                 return;
             }
-            const idx = songs.findIndex(s => s.filename === this.currentFilename);
+            const idx = songs.findIndex(s => s.id === this.currentSongId);
             const prevIdx = (idx - 1 + songs.length) % songs.length;
-            this.loadSong(songs[prevIdx].filename);
+            this.loadSong(songs[prevIdx].id);
         },
 
         toggleShuffle() {
             this.shuffle = !this.shuffle;
             if (this.shuffle) this.buildShuffleQueue(this.filteredSongs);
             this._saveState();
+            this._syncToDb();
         },
 
         toggleLoop() {
@@ -183,17 +243,18 @@ document.addEventListener('alpine:init', () => {
             else if (this.loop === 'all') this.loop = 'one';
             else this.loop = 'none';
             this._saveState();
+            this._syncToDb();
         },
 
         buildShuffleQueue(songs) {
-            const filenames = songs
-                .map(s => s.filename)
-                .filter(f => f !== this.currentFilename);
-            for (let i = filenames.length - 1; i > 0; i--) {
+            const ids = songs
+                .map(s => s.id)
+                .filter(id => id !== this.currentSongId);
+            for (let i = ids.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
-                [filenames[i], filenames[j]] = [filenames[j], filenames[i]];
+                [ids[i], ids[j]] = [ids[j], ids[i]];
             }
-            this.shuffleQueue = filenames;
+            this.shuffleQueue = ids;
         },
 
         seek(value) {
@@ -207,12 +268,14 @@ document.addEventListener('alpine:init', () => {
             this.audio.volume = this.volume;
             this.muted = this.volume === 0;
             this._saveState();
+            this._syncToDbDebounced(1500);
         },
 
         toggleMute() {
             this.muted = !this.muted;
             this.audio.muted = this.muted;
             this._saveState();
+            this._syncToDb();
         },
 
         formatTime(seconds) {
@@ -223,13 +286,13 @@ document.addEventListener('alpine:init', () => {
         },
 
         // ── Favourites ──────────────────────────────────────────────────
-        async toggleFavourite(filename) {
-            if (this.favourites.includes(filename)) {
-                this.favourites = this.favourites.filter(f => f !== filename);
+        async toggleFavourite(songId) {
+            if (this.favourites.includes(songId)) {
+                this.favourites = this.favourites.filter(id => id !== songId);
             } else {
-                this.favourites.push(filename);
+                this.favourites.push(songId);
             }
-            await this.$wire.toggleFavourite(filename);
+            await this.$wire.toggleFavourite(songId);
         },
 
         // ── Playlists ────────────────────────────────────────────────────
@@ -282,34 +345,99 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        openAddToPlaylist(filename) {
-            this.addToPlaylistFilename = filename;
+        openAddToPlaylist(songId) {
+            this.addToPlaylistSongId = songId;
             this.showAddToPlaylistModal = true;
         },
 
-        async toggleSongInPlaylist(playlistId, filename) {
+        async toggleSongInPlaylist(playlistId, songId) {
             const pl = this.playlists.find(p => p.id === playlistId);
             if (!pl) return;
 
-            if (pl.songs.includes(filename)) {
-                await this.$wire.removeFromPlaylist(playlistId, filename);
-                pl.songs = pl.songs.filter(f => f !== filename);
+            if (pl.songs.includes(songId)) {
+                await this.$wire.removeFromPlaylist(playlistId, songId);
+                pl.songs = pl.songs.filter(id => id !== songId);
             } else {
-                await this.$wire.addToPlaylist(playlistId, filename);
-                pl.songs.push(filename);
+                await this.$wire.addToPlaylist(playlistId, songId);
+                pl.songs.push(songId);
             }
+        },
+
+        // ── Selection & context menu ─────────────────────────────────────
+        selectSong(songId) {
+            if (this._longPressTriggered) { this._longPressTriggered = false; return; }
+            this.selectedSongId = songId;
+        },
+
+        openContextMenu(event, songId) {
+            this.selectedSongId = songId;
+            const menuW = 230, menuH = 220;
+            this.contextMenu = {
+                show: true,
+                songId,
+                x: Math.min(event.clientX, window.innerWidth - menuW - 8),
+                y: Math.min(event.clientY, window.innerHeight - menuH - 8),
+            };
+        },
+
+        closeContextMenu() {
+            this.contextMenu.show = false;
+        },
+
+        startLongPress(event, songId) {
+            if (event.button !== undefined && event.button !== 0) return;
+            const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+            const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+            this._longPressTriggered = false;
+            clearTimeout(this._longPressTimer);
+            this._longPressTimer = setTimeout(() => {
+                this._longPressTriggered = true;
+                this.openContextMenu({ clientX, clientY }, songId);
+            }, 500);
+        },
+
+        cancelLongPress() {
+            clearTimeout(this._longPressTimer);
+            this._longPressTimer = null;
+        },
+
+        // ── Queue ────────────────────────────────────────────────────────
+        addToQueue(songId) {
+            this.queue.push(songId);
+            this._syncToDbDebounced(500);
+        },
+
+        removeFromQueue(index) {
+            this.queue.splice(index, 1);
+            this._syncToDbDebounced(500);
+        },
+
+        clearQueue() {
+            this.queue = [];
+            this._syncToDb();
+        },
+
+        playFromQueue(index) {
+            const songId = this.queue[index];
+            this.queue.splice(0, index + 1);
+            this.loadSong(songId);
+            // loadSong already triggers _syncToDbDebounced
         },
 
         // ── State persistence ────────────────────────────────────────────
         _saveState() {
             try {
                 localStorage.setItem('musicPlayerState', JSON.stringify({
-                    currentFilename: this.currentFilename,
+                    currentSongId: this.currentSongId,
                     currentTime: this.audio.currentTime,
                     volume: this.volume,
                     muted: this.muted,
                     shuffle: this.shuffle,
                     loop: this.loop,
+                    leftSidebarOpen: this.leftSidebarOpen,
+                    rightSidebarOpen: this.rightSidebarOpen,
+                    viewMode: this.viewMode,
+                    queue: this.queue,
                 }));
             } catch (_) {}
         },
@@ -318,6 +446,26 @@ document.addEventListener('alpine:init', () => {
             try {
                 return JSON.parse(localStorage.getItem('musicPlayerState') || '{}');
             } catch (_) { return {}; }
+        },
+
+        _syncToDb() {
+            this.$wire.saveSession(
+                this.currentSongId,
+                this.audio ? this.audio.currentTime : 0,
+                this.volume,
+                this.muted,
+                this.shuffle,
+                this.loop,
+                this.leftSidebarOpen,
+                this.rightSidebarOpen,
+                [...this.queue],
+                this.viewMode
+            );
+        },
+
+        _syncToDbDebounced(delay = 1000) {
+            clearTimeout(this._dbSaveTimer);
+            this._dbSaveTimer = setTimeout(() => this._syncToDb(), delay);
         },
     }));
 });
