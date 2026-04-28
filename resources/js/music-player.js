@@ -332,7 +332,12 @@ document.addEventListener('alpine:init', () => {
             });
 
             this.audio.addEventListener('pause', () => {
+                this.playing = false;
                 this._syncToDbDebounced(500);
+            });
+
+            this.audio.addEventListener('play', () => {
+                this.playing = true;
             });
 
             if (this.songs.length) {
