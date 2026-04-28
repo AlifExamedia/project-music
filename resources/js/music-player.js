@@ -281,6 +281,10 @@ document.addEventListener('alpine:init', () => {
             if (src.leftSidebarOpen !== undefined)    this.leftSidebarOpen   = src.leftSidebarOpen;
             if (src.right_sidebar_open !== undefined) this.rightSidebarOpen  = src.right_sidebar_open;
             if (src.rightSidebarOpen !== undefined)   this.rightSidebarOpen  = src.rightSidebarOpen;
+            // localStorage is saved synchronously on toggle; prefer it for sidebar state
+            // so a quick refresh before the async DB sync completes doesn't revert the UI
+            if (local.leftSidebarOpen !== undefined)  this.leftSidebarOpen   = local.leftSidebarOpen;
+            if (local.rightSidebarOpen !== undefined) this.rightSidebarOpen  = local.rightSidebarOpen;
             if (src.view_mode !== undefined)          this.viewMode          = src.view_mode;
             if (src.viewMode !== undefined)           this.viewMode          = src.viewMode;
             if (Array.isArray(src.queue) && src.queue.length) this.queue    = src.queue;
