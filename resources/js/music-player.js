@@ -345,7 +345,8 @@ document.addEventListener('alpine:init', () => {
             });
 
             if (this.songs.length) {
-                const songId = src.current_song_id ?? src.currentSongId;
+                // localStorage is saved every ~250ms via timeupdate; DB only every 15s — prefer localStorage
+                const songId = local.currentSongId ?? src.current_song_id ?? src.currentSongId;
                 const song = songId ? this.songs.find(s => s.id === songId) : null;
                 if (song) {
                     this.loadSong(song.id, false);
